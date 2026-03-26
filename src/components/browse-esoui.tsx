@@ -421,6 +421,7 @@ function DetailView({
               src={detail.screenshots[safeIdx]}
               alt={`Screenshot ${safeIdx + 1}`}
               className="w-full max-h-[300px] object-contain"
+              loading="lazy"
             />
             {detail.screenshots.length > 1 && (
               <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
@@ -456,6 +457,7 @@ function DetailView({
                     src={src}
                     alt={`Thumb ${i + 1}`}
                     className="h-14 w-24 object-cover"
+                    loading="lazy"
                   />
                 </button>
               ))}

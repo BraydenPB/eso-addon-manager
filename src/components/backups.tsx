@@ -29,6 +29,7 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
 
   const loadBackups = async () => {
     try {
@@ -141,13 +142,39 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    onClick={() => handleRestore(b.name)}
-                    disabled={restoring !== null}
-                  >
-                    {restoring === b.name ? "Restoring..." : "Restore"}
-                  </Button>
+                  {confirmRestore === b.name ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-amber-400 mr-1">
+                        Overwrite current SavedVariables?
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          setConfirmRestore(null);
+                          handleRestore(b.name);
+                        }}
+                        disabled={restoring !== null}
+                      >
+                        {restoring === b.name ? "Restoring..." : "Yes, Restore"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setConfirmRestore(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => setConfirmRestore(b.name)}
+                      disabled={restoring !== null}
+                    >
+                      {restoring === b.name ? "Restoring..." : "Restore"}
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="destructive"

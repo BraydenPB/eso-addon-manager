@@ -7,7 +7,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-/// Validate a user-supplied name (backup name, etc.) to prevent path traversal.
+/// Validate a user-supplied name (backup name, etc.) to prevent path traversal
+/// and reject Windows reserved device names.
 fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("Name cannot be empty.".to_string());
@@ -15,6 +16,22 @@ fn validate_name(name: &str) -> Result<(), String> {
     if name.contains("..") || name.contains('/') || name.contains('\\') {
         return Err("Name contains invalid characters.".to_string());
     }
+
+    // Reject Windows reserved device names (case-insensitive).
+    // These include CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9.
+    // Check the stem (name without extension) since "CON.txt" is also reserved.
+    let stem = name.split('.').next().unwrap_or(name);
+    let upper = stem.to_uppercase();
+    let is_reserved = matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL"
+        | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
+        | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+    );
+    if is_reserved {
+        return Err(format!("\"{}\" is a Windows reserved name and cannot be used.", stem));
+    }
+
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 use regex::Regex;
 use scraper::{Html, Selector};
 use serde::Serialize;
-use std::io::Write;
+use std::io;
 use std::sync::OnceLock;
 use tempfile::NamedTempFile;
 
@@ -109,6 +109,12 @@ fn fetch_page_with_query(
         .map_err(|e| format!("Failed to read response: {}", e))
 }
 
+/// Fetch basic addon info (title, version, download URL) from ESOUI.
+///
+/// Scraper assumptions (check if ESOUI changes their HTML):
+/// - Title: `<meta property="og:title" content="...">` on the info page
+/// - Version: `<div id="version">Version: X.Y.Z</div>` on the info page
+/// - Download URL: landing.php page has an `<a href="https://cdn.esoui.com/.../.zip...">` link
 pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
     let client = http_client();
 
@@ -160,7 +166,11 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
         .find(|href| href.contains("cdn.esoui.com") && href.contains(".zip"))
         .map(|s| s.to_string())
         .ok_or_else(|| {
-            "Could not find download link on ESOUI. The addon may have been removed.".to_string()
+            format!(
+                "Could not find a CDN download link (cdn.esoui.com/*.zip) on the landing page for addon {}. \
+                 The addon may have been removed, or ESOUI may have changed their page layout.",
+                id
+            )
         })?;
 
     Ok(EsouiAddonInfo {
@@ -191,6 +201,16 @@ pub struct EsouiAddonDetail {
 }
 
 /// Fetch full addon page details from ESOUI.
+///
+/// Scraper assumptions (check if ESOUI changes their HTML):
+/// - Title: `<meta property="og:title" content="...">`
+/// - Version: `<div id="version">Version: X.Y.Z</div>`
+/// - Author: `<div id="author">by: AuthorName</div>`
+/// - Description: `<div class="postmessage">...</div>`
+/// - File size: `<div id="size">...</div>`
+/// - Table metadata (Compatibility, Total downloads, etc.): `<tr><td>Label:</td><td>Value</td></tr>`
+/// - Screenshots: `<a class="lightbox" rel="filepics" href="...preview...">`
+/// - Download URL: landing.php page `<a href="https://cdn.esoui.com/.../.zip...">`
 pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
     let client = http_client();
 
@@ -332,6 +352,23 @@ pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
         .find(|href| href.contains("cdn.esoui.com") && href.contains(".zip"))
         .map(|s| s.to_string())
         .unwrap_or_default();
+
+    // Validate that we got the critical fields; empty title or download_url likely means
+    // ESOUI changed their page structure.
+    if title.is_empty() || title == format!("Addon #{}", id) {
+        return Err(format!(
+            "Could not extract addon title for addon {}. ESOUI may have changed their page layout \
+             (expected <meta property=\"og:title\"> tag).",
+            id
+        ));
+    }
+    if download_url.is_empty() {
+        return Err(format!(
+            "Could not find a CDN download link for addon {}. ESOUI may have changed their \
+             landing page layout (expected <a href=\"https://cdn.esoui.com/.../*.zip\">).",
+            id
+        ));
+    }
 
     Ok(EsouiAddonDetail {
         id,
@@ -634,14 +671,13 @@ pub fn download_addon(url: &str) -> Result<NamedTempFile, String> {
         ));
     }
 
-    let bytes = response
-        .bytes()
-        .map_err(|e| format!("Failed to read download: {}", e))?;
-
     let mut tmp = NamedTempFile::new().map_err(|e| format!("Failed to create temp file: {}", e))?;
 
-    tmp.write_all(&bytes)
-        .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    // Stream the response directly to disk instead of buffering the entire ZIP in memory.
+    // reqwest::blocking::Response implements std::io::Read, so io::copy streams in chunks.
+    let mut response = response;
+    io::copy(&mut response, &mut tmp)
+        .map_err(|e| format!("Failed to write download to temp file: {}", e))?;
 
     Ok(tmp)
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { AddonList } from "./components/addon-list";
@@ -18,6 +18,19 @@ import type { AddonManifest, UpdateCheckResult, InstallResult } from "./types";
 
 export type SortMode = "name" | "author" | "recent";
 export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-deps";
+
+/** Hook to close a dropdown when clicking outside */
+function useClickOutside(ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [ref, onClose]);
+}
 
 function App() {
   const [addonsPath, setAddonsPath] = useState<string>("");
@@ -41,6 +54,11 @@ function App() {
   const [updatingAll, setUpdatingAll] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+
+  // Header overflow menu
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  useClickOutside(moreMenuRef, () => setShowMoreMenu(false));
 
   // Batch selection
   const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
@@ -423,32 +441,42 @@ function App() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowInstall(true)}
-              >
-                Install URL
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowProfiles(true)}
-              >
-                Profiles
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 onClick={handleRefresh}
                 disabled={loading}
               >
                 {loading ? "Scanning..." : "Refresh"}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSettings(true)}
-              >
-                Settings
-              </Button>
+              <div className="relative" ref={moreMenuRef}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMoreMenu((v) => !v)}
+                >
+                  More&hellip;
+                </Button>
+                {showMoreMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border border-border bg-popover p-1 shadow-md">
+                    <button
+                      className="flex w-full items-center rounded-sm px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                      onClick={() => { setShowMoreMenu(false); setShowInstall(true); }}
+                    >
+                      Install from URL
+                    </button>
+                    <button
+                      className="flex w-full items-center rounded-sm px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                      onClick={() => { setShowMoreMenu(false); setShowProfiles(true); }}
+                    >
+                      Profiles
+                    </button>
+                    <button
+                      className="flex w-full items-center rounded-sm px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                      onClick={() => { setShowMoreMenu(false); setShowSettings(true); }}
+                    >
+                      Settings
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
