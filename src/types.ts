@@ -40,3 +40,9 @@ export interface UpdateCheckResult {
   downloadUrl: string;
   hasUpdate: boolean;
 }
+
+export interface ImportResult {
+  installed: string[];
+  failed: string[];
+  skipped: string[];
+}

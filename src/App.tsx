@@ -272,6 +272,7 @@ function App() {
           addonsPath={addonsPath}
           onPathChange={handlePathChange}
           onClose={() => setShowSettings(false)}
+          onRefresh={handleRefresh}
         />
       )}
     </div>

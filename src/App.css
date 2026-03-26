@@ -423,6 +423,51 @@ body {
   font-size: 13px;
 }
 
+.settings-section {
+  margin-bottom: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.settings-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.settings-status {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.import-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-results .install-success,
+.import-results .install-error {
+  margin-bottom: 0;
+}
+
 .settings-actions {
   display: flex;
   gap: 8px;

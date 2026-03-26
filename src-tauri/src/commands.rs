@@ -2,7 +2,7 @@ use crate::esoui::{self, EsouiAddonInfo};
 use crate::installer;
 use crate::manifest::{self, AddonManifest};
 use crate::metadata;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -350,5 +350,120 @@ pub fn update_addon(addons_path: String, esoui_id: u32) -> Result<InstallResult,
         installed_deps: Vec::new(),
         failed_deps: Vec::new(),
         skipped_deps: Vec::new(),
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportEntry {
+    pub esoui_id: u32,
+    pub folder_name: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportData {
+    pub version: u32,
+    pub addons: Vec<ExportEntry>,
+}
+
+#[tauri::command]
+pub fn export_addon_list(addons_path: String) -> Result<String, String> {
+    let addons_dir = PathBuf::from(&addons_path);
+    let store = metadata::load_metadata(&addons_dir);
+
+    let mut entries: Vec<ExportEntry> = store
+        .addons
+        .iter()
+        .filter(|(folder, _)| addons_dir.join(folder).is_dir())
+        .map(|(folder, meta)| ExportEntry {
+            esoui_id: meta.esoui_id,
+            folder_name: folder.clone(),
+            version: meta.installed_version.clone(),
+        })
+        .collect();
+
+    entries.sort_by(|a, b| a.folder_name.cmp(&b.folder_name));
+
+    // Deduplicate by esoui_id (multiple folders can share an ID)
+    let mut seen_ids: HashSet<u32> = HashSet::new();
+    entries.retain(|e| seen_ids.insert(e.esoui_id));
+
+    let export = ExportData {
+        version: 1,
+        addons: entries,
+    };
+
+    serde_json::to_string_pretty(&export).map_err(|e| format!("Failed to export: {}", e))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    pub installed: Vec<String>,
+    pub failed: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+#[tauri::command]
+pub fn import_addon_list(addons_path: String, json_data: String) -> Result<ImportResult, String> {
+    let export: ExportData =
+        serde_json::from_str(&json_data).map_err(|e| format!("Invalid export file: {}", e))?;
+
+    let addons_dir = PathBuf::from(&addons_path);
+    if !addons_dir.is_dir() {
+        return Err(format!("AddOns folder not found: {}", addons_path));
+    }
+
+    let mut installed: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    let mut store = metadata::load_metadata(&addons_dir);
+
+    for entry in &export.addons {
+        // Skip if already installed
+        if addons_dir.join(&entry.folder_name).is_dir() {
+            skipped.push(entry.folder_name.clone());
+            continue;
+        }
+
+        match esoui::fetch_addon_info(entry.esoui_id) {
+            Ok(info) => match esoui::download_addon(&info.download_url) {
+                Ok(tmp) => match installer::extract_addon_zip(tmp.path(), &addons_dir) {
+                    Ok(folders) => {
+                        for f in &folders {
+                            let ver = find_manifest(&addons_dir, f)
+                                .and_then(|p| manifest::parse_manifest(f, &p))
+                                .map(|m| m.version)
+                                .unwrap_or_default();
+                            metadata::record_install(
+                                &mut store,
+                                f,
+                                entry.esoui_id,
+                                &ver,
+                                &info.download_url,
+                            );
+                        }
+                        installed.push(entry.folder_name.clone());
+                    }
+                    Err(_) => failed.push(entry.folder_name.clone()),
+                },
+                Err(_) => failed.push(entry.folder_name.clone()),
+            },
+            Err(_) => failed.push(entry.folder_name.clone()),
+        }
+
+        // Be respectful to ESOUI
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+
+    let _ = metadata::save_metadata(&addons_dir, &store);
+
+    Ok(ImportResult {
+        installed,
+        failed,
+        skipped,
     })
 }
