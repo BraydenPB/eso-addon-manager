@@ -32,11 +32,7 @@ fn metadata_path(addons_path: &Path) -> std::path::PathBuf {
     addons_path.join("eso-addon-manager.json")
 }
 
-fn now_iso() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+pub fn format_timestamp(secs: u64) -> String {
     // Simple UTC timestamp without chrono dependency
     let days = secs / 86400;
     let rem = secs % 86400;
@@ -121,7 +117,12 @@ pub fn record_install(
             esoui_id,
             installed_version: version.to_string(),
             download_url: download_url.to_string(),
-            installed_at: now_iso(),
+            installed_at: format_timestamp(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            ),
         },
     );
 }

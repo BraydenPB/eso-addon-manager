@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getSetting, setSetting } from "@/lib/store";
 import type { ImportResult } from "../types";
 import {
   Dialog,
@@ -19,6 +20,8 @@ interface SettingsProps {
   onPathChange: (path: string) => void;
   onClose: () => void;
   onRefresh: () => void;
+  onShowBackups: () => void;
+  onShowApiCompat: () => void;
 }
 
 export function Settings({
@@ -26,12 +29,19 @@ export function Settings({
   onPathChange,
   onClose,
   onRefresh,
+  onShowBackups,
+  onShowApiCompat,
 }: SettingsProps) {
   const [path, setPath] = useState(addonsPath);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [autoUpdate, setAutoUpdate] = useState(false);
+
+  useEffect(() => {
+    getSetting<boolean>("autoUpdate", false).then(setAutoUpdate);
+  }, []);
 
   const handleSave = () => {
     if (path.trim()) {
@@ -122,7 +132,41 @@ export function Settings({
           <Separator />
 
           <div>
-            <h3 className="mb-1 text-sm font-medium">Backup & Restore</h3>
+            <h3 className="mb-1 text-sm font-medium">Auto-Update</h3>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoUpdate}
+                onChange={(e) => {
+                  setAutoUpdate(e.target.checked);
+                  setSetting("autoUpdate", e.target.checked);
+                }}
+                className="accent-[var(--primary)]"
+              />
+              <span className="text-sm">
+                Automatically update all addons on launch
+              </span>
+            </label>
+          </div>
+
+          <Separator />
+
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Tools</h3>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onShowBackups}>
+                SavedVariables Backup
+              </Button>
+              <Button variant="outline" size="sm" onClick={onShowApiCompat}>
+                API Compatibility
+              </Button>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Addon List Backup</h3>
             <p className="mb-3 text-xs text-muted-foreground">
               Export your tracked addon list to clipboard, or import from a
               previously exported list.

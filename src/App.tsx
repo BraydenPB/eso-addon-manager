@@ -5,6 +5,10 @@ import { AddonList } from "./components/addon-list";
 import { AddonDetail } from "./components/addon-detail";
 import { InstallDialog } from "./components/install-dialog";
 import { BrowseEsoui } from "./components/browse-esoui";
+import { CategoryBrowser } from "./components/category-browser";
+import { Profiles } from "./components/profiles";
+import { Backups } from "./components/backups";
+import { ApiCompat } from "./components/api-compat";
 import { Settings } from "./components/settings";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
@@ -25,6 +29,10 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
   const [showBrowse, setShowBrowse] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [showBackups, setShowBackups] = useState(false);
+  const [showApiCompat, setShowApiCompat] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [updateResults, setUpdateResults] = useState<UpdateCheckResult[]>([]);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -36,7 +44,7 @@ function App() {
   const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
   const [batchRemoving, setBatchRemoving] = useState(false);
 
-  const checkForUpdates = useCallback(async (path: string) => {
+  const checkForUpdates = useCallback(async (path: string, autoUpdate = false) => {
     setCheckingUpdates(true);
     try {
       const results = await invoke<UpdateCheckResult[]>("check_for_updates", {
@@ -44,7 +52,25 @@ function App() {
       });
       setUpdateResults(results);
       const updates = results.filter((r) => r.hasUpdate);
-      if (updates.length > 0) {
+
+      if (autoUpdate && updates.length > 0) {
+        toast.info(`Auto-updating ${updates.length} addon${updates.length > 1 ? "s" : ""}...`);
+        let updated = 0;
+        for (const update of updates) {
+          try {
+            await invoke<InstallResult>("update_addon", {
+              addonsPath: path,
+              esouiId: update.esouiId,
+            });
+            updated++;
+          } catch {
+            // Continue
+          }
+        }
+        if (updated > 0) {
+          toast.success(`Auto-updated ${updated} addon${updated !== 1 ? "s" : ""}`);
+        }
+      } else if (updates.length > 0) {
         toast.info(`${updates.length} update${updates.length > 1 ? "s" : ""} available`);
       }
     } catch {
@@ -125,7 +151,8 @@ function App() {
         setAddonsPath(path);
         await setSetting("addonsPath", path);
         await scanAddons(path);
-        checkForUpdates(path);
+        const autoUpdate = await getSetting<boolean>("autoUpdate", false);
+        checkForUpdates(path, autoUpdate);
         // Auto-link after initial scan
         runAutoLink(path);
       } catch {
@@ -378,14 +405,28 @@ function App() {
                 </Button>
               )}
               <Button size="sm" onClick={() => setShowBrowse(true)}>
-                Browse
+                Search
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCategories(true)}
+              >
+                Categories
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowInstall(true)}
               >
-                Install by URL
+                Install URL
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowProfiles(true)}
+              >
+                Profiles
               </Button>
               <Button
                 variant="outline"
@@ -461,12 +502,50 @@ function App() {
         />
       )}
 
+      {showCategories && (
+        <CategoryBrowser
+          addonsPath={addonsPath}
+          onInstalled={handleRefresh}
+          onClose={() => setShowCategories(false)}
+        />
+      )}
+
+      {showProfiles && (
+        <Profiles
+          addonsPath={addonsPath}
+          onClose={() => setShowProfiles(false)}
+          onRefresh={handleRefresh}
+        />
+      )}
+
+      {showBackups && (
+        <Backups
+          addonsPath={addonsPath}
+          onClose={() => setShowBackups(false)}
+        />
+      )}
+
+      {showApiCompat && (
+        <ApiCompat
+          addonsPath={addonsPath}
+          onClose={() => setShowApiCompat(false)}
+        />
+      )}
+
       {showSettings && (
         <Settings
           addonsPath={addonsPath}
           onPathChange={handlePathChange}
           onClose={() => setShowSettings(false)}
           onRefresh={handleRefresh}
+          onShowBackups={() => {
+            setShowSettings(false);
+            setShowBackups(true);
+          }}
+          onShowApiCompat={() => {
+            setShowSettings(false);
+            setShowApiCompat(true);
+          }}
         />
       )}
     </div>

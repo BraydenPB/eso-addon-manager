@@ -72,3 +72,28 @@ export interface EsouiAddonDetail {
   screenshots: string[];
   downloadUrl: string;
 }
+
+export interface EsouiCategory {
+  id: number;
+  name: string;
+  depth: number;
+}
+
+export interface ApiCompatInfo {
+  gameApiVersion: number;
+  outdatedAddons: string[];
+  upToDateAddons: string[];
+}
+
+export interface BackupInfo {
+  name: string;
+  createdAt: string;
+  fileCount: number;
+  totalSize: number;
+}
+
+export interface AddonProfile {
+  name: string;
+  enabledAddons: string[];
+  createdAt: string;
+}

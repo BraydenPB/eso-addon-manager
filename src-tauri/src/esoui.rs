@@ -470,6 +470,114 @@ pub fn search_addon_by_name(name: &str) -> Result<Option<u32>, String> {
     Ok(None)
 }
 
+use crate::commands::EsouiCategory;
+
+/// Fetch the full category list from ESOUI search page.
+pub fn fetch_categories() -> Result<Vec<EsouiCategory>, String> {
+    let client = http_client();
+    let body = fetch_page(&client, "https://www.esoui.com/downloads/search.php")?;
+    let document = Html::parse_document(&body);
+
+    let option_sel = Selector::parse("option[value]").unwrap();
+    let mut categories: Vec<EsouiCategory> = Vec::new();
+
+    for el in document.select(&option_sel) {
+        let value = el.value().attr("value").unwrap_or("0");
+        let id = match value.parse::<u32>() {
+            Ok(id) if id > 0 => id,
+            _ => continue,
+        };
+        let text = el.text().collect::<String>();
+        let name = text.trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+
+        let depth = if name.starts_with("--") {
+            2
+        } else if name.starts_with('-') {
+            1
+        } else {
+            0
+        };
+        let clean_name = name.trim_start_matches('-').trim().to_string();
+
+        categories.push(EsouiCategory {
+            id,
+            name: clean_name,
+            depth,
+        });
+    }
+
+    Ok(categories)
+}
+
+/// Browse addons in a specific ESOUI category.
+pub fn browse_category(category_id: u32, page: u32, sort_by: &str) -> Result<Vec<EsouiSearchResult>, String> {
+    let client = http_client();
+
+    let sb = match sort_by {
+        "downloads" => "dec_download",
+        "newest" => "lastupdate",
+        "name" => "title",
+        _ => "dec_download",
+    };
+
+    let url = format!(
+        "https://www.esoui.com/downloads/index.php?cid={}&sb={}&so=desc&pt=f&dp={}",
+        category_id, sb, page
+    );
+
+    let body = fetch_page(&client, &url)?;
+    let document = Html::parse_document(&body);
+
+    let re_id = Regex::new(r"info(\d+)").unwrap();
+    let a_sel = Selector::parse("a.addonLink").unwrap();
+    let cat_sel = Selector::parse("li.category").unwrap();
+
+    // Parse the listing — each addon has a title link and a category label
+    let mut results: Vec<EsouiSearchResult> = Vec::new();
+    let mut categories: Vec<String> = Vec::new();
+
+    // Collect all category labels in order
+    for el in document.select(&cat_sel) {
+        categories.push(el.text().collect::<String>().trim().to_string());
+    }
+
+    let mut idx = 0;
+    for el in document.select(&a_sel) {
+        let href = el.value().attr("href").unwrap_or("");
+        let title = el.text().collect::<String>().trim().to_string();
+
+        let id = match re_id.captures(href) {
+            Some(caps) => match caps[1].parse::<u32>() {
+                Ok(id) => id,
+                Err(_) => continue,
+            },
+            None => continue,
+        };
+
+        let category = categories.get(idx).cloned().unwrap_or_default();
+        idx += 1;
+
+        // Skip duplicates (ESOUI sometimes lists addons twice)
+        if results.iter().any(|r| r.id == id) {
+            continue;
+        }
+
+        results.push(EsouiSearchResult {
+            id,
+            title,
+            author: String::new(), // Not available in category listing
+            category,
+            downloads: String::new(),
+            updated: String::new(),
+        });
+    }
+
+    Ok(results)
+}
+
 pub fn download_addon(url: &str) -> Result<NamedTempFile, String> {
     let client = http_client();
 

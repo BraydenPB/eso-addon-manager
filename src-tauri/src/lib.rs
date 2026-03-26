@@ -22,6 +22,17 @@ pub fn run() {
             commands::import_addon_list,
             commands::auto_link_addons,
             commands::batch_remove_addons,
+            commands::get_esoui_categories,
+            commands::browse_esoui_category,
+            commands::check_api_compatibility,
+            commands::list_backups,
+            commands::create_backup,
+            commands::restore_backup,
+            commands::delete_backup,
+            commands::list_profiles,
+            commands::create_profile,
+            commands::activate_profile,
+            commands::delete_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
