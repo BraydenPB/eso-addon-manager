@@ -6,6 +6,7 @@ import { InstallDialog } from "./components/install-dialog";
 import { Settings } from "./components/settings";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
+import { getSetting, setSetting } from "@/lib/store";
 import type { AddonManifest, UpdateCheckResult, InstallResult } from "./types";
 
 export type SortMode = "name" | "author" | "recent";
@@ -77,9 +78,21 @@ function App() {
 
   useEffect(() => {
     async function init() {
+      // Load persisted preferences
+      const savedSort = await getSetting<SortMode>("sortMode", "name");
+      const savedFilter = await getSetting<FilterMode>("filterMode", "all");
+      setSortMode(savedSort);
+      setFilterMode(savedFilter);
+
+      // Try saved path first, then auto-detect
+      const savedPath = await getSetting<string>("addonsPath", "");
       try {
-        const path = await invoke<string>("detect_addons_folder");
+        let path = savedPath;
+        if (!path) {
+          path = await invoke<string>("detect_addons_folder");
+        }
         setAddonsPath(path);
+        await setSetting("addonsPath", path);
         await scanAddons(path);
         checkForUpdates(path);
       } catch {
@@ -122,7 +135,18 @@ function App() {
     setAddonsPath(newPath);
     setSelectedAddon(null);
     setUpdateResults([]);
+    setSetting("addonsPath", newPath);
     scanAndCheck(newPath);
+  };
+
+  const handleSortChange = (mode: SortMode) => {
+    setSortMode(mode);
+    setSetting("sortMode", mode);
+  };
+
+  const handleFilterChange = (mode: FilterMode) => {
+    setFilterMode(mode);
+    setSetting("filterMode", mode);
   };
 
   const updatesAvailable = updateResults.filter((r) => r.hasUpdate);
@@ -255,9 +279,9 @@ function App() {
           loading={loading}
           updateResults={updateResults}
           sortMode={sortMode}
-          onSortChange={setSortMode}
+          onSortChange={handleSortChange}
           filterMode={filterMode}
-          onFilterChange={setFilterMode}
+          onFilterChange={handleFilterChange}
         />
         <AddonDetail
           addon={selectedAddon}

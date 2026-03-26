@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { ImportResult } from "../types";
 import {
   Dialog,
@@ -37,6 +38,17 @@ export function Settings({
       onPathChange(path.trim());
     }
     onClose();
+  };
+
+  const handleBrowse = async () => {
+    const selected = await open({
+      directory: true,
+      title: "Select ESO AddOns Folder",
+      defaultPath: path || undefined,
+    });
+    if (selected) {
+      setPath(selected);
+    }
   };
 
   const handleExport = async () => {
@@ -90,16 +102,21 @@ export function Settings({
             >
               ESO AddOns Folder Path
             </label>
-            <Input
-              id="addons-path"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="C:\Users\...\Elder Scrolls Online\live\AddOns"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSave();
-              }}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="addons-path"
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder="C:\Users\...\Elder Scrolls Online\live\AddOns"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSave();
+                }}
+              />
+              <Button variant="outline" size="sm" onClick={handleBrowse}>
+                Browse
+              </Button>
+            </div>
           </div>
 
           <Separator />
