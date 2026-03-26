@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { EsouiAddonInfo, InstallResult } from "../types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 
 type InstallState =
   | "idle"
@@ -63,107 +73,106 @@ export function InstallDialog({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") onClose();
     if (e.key === "Enter" && state === "idle") handleResolve();
   };
 
   const busy = state === "resolving" || state === "installing";
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div
-        className="settings-panel"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="sm:max-w-md"
         onKeyDown={handleKeyDown}
       >
-        <h2>Install Addon</h2>
+        <DialogHeader>
+          <DialogTitle>Install Addon</DialogTitle>
+        </DialogHeader>
 
-        <div className="settings-field">
-          <label htmlFor="esoui-input">ESOUI URL or Addon ID</label>
-          <input
-            id="esoui-input"
-            type="text"
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              if (state !== "idle" && state !== "error") {
-                setState("idle");
-                setAddonInfo(null);
-                setResult(null);
-              }
-            }}
-            placeholder="https://www.esoui.com/downloads/info123 or 123"
-            disabled={busy}
-            autoFocus
-          />
+        <div className="space-y-4">
+          <div>
+            <label
+              htmlFor="esoui-input"
+              className="mb-1 block text-sm text-muted-foreground"
+            >
+              ESOUI URL or Addon ID
+            </label>
+            <Input
+              id="esoui-input"
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                if (state !== "idle" && state !== "error") {
+                  setState("idle");
+                  setAddonInfo(null);
+                  setResult(null);
+                }
+              }}
+              placeholder="https://www.esoui.com/downloads/info123 or 123"
+              disabled={busy}
+              autoFocus
+            />
+          </div>
+
+          {addonInfo && state === "resolved" && (
+            <div className="rounded-lg border border-border bg-background p-3">
+              <div className="font-medium text-primary">{addonInfo.title}</div>
+              <div className="text-xs text-muted-foreground">
+                ESOUI #{addonInfo.id}
+                {addonInfo.version && ` \u00b7 v${addonInfo.version}`}
+              </div>
+            </div>
+          )}
+
+          {state === "installed" && result && (
+            <div className="space-y-2">
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
+                Installed: {result.installedFolders.join(", ")}
+              </div>
+              {result.installedDeps.length > 0 && (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
+                  Auto-installed dependencies: {result.installedDeps.join(", ")}
+                </div>
+              )}
+              {result.failedDeps.length > 0 && (
+                <Alert variant="destructive">
+                  Failed to install: {result.failedDeps.join(", ")}
+                </Alert>
+              )}
+              {result.skippedDeps.length > 0 && (
+                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-400">
+                  Not found on ESOUI: {result.skippedDeps.join(", ")}
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && <Alert variant="destructive">{error}</Alert>}
         </div>
 
-        {addonInfo && state === "resolved" && (
-          <div className="install-preview">
-            <div className="install-preview-title">{addonInfo.title}</div>
-            <div className="install-preview-meta">ESOUI #{addonInfo.id}</div>
-          </div>
-        )}
-
-        {state === "installed" && result && (
-          <div className="install-results">
-            <div className="install-success">
-              Installed: {result.installedFolders.join(", ")}
-            </div>
-            {result.installedDeps.length > 0 && (
-              <div className="install-success">
-                Auto-installed dependencies: {result.installedDeps.join(", ")}
-              </div>
-            )}
-            {result.failedDeps.length > 0 && (
-              <div className="install-error">
-                Failed to install: {result.failedDeps.join(", ")}
-              </div>
-            )}
-            {result.skippedDeps.length > 0 && (
-              <div className="install-warning">
-                Not found on ESOUI: {result.skippedDeps.join(", ")}
-              </div>
-            )}
-          </div>
-        )}
-
-        {error && <div className="install-error">{error}</div>}
-
-        <div className="settings-actions">
-          <button className="btn" onClick={onClose}>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
             {state === "installed" ? "Close" : "Cancel"}
-          </button>
+          </Button>
 
           {(state === "idle" || state === "error") && (
-            <button
-              className="btn btn-accent"
-              onClick={handleResolve}
-              disabled={!input.trim()}
-            >
+            <Button onClick={handleResolve} disabled={!input.trim()}>
               Resolve
-            </button>
+            </Button>
           )}
 
           {state === "resolving" && (
-            <button className="btn" disabled>
-              Resolving...
-            </button>
+            <Button disabled>Resolving...</Button>
           )}
 
           {state === "resolved" && (
-            <button className="btn btn-accent" onClick={handleInstall}>
-              Install
-            </button>
+            <Button onClick={handleInstall}>Install</Button>
           )}
 
           {state === "installing" && (
-            <button className="btn" disabled>
-              Installing &amp; resolving deps...
-            </button>
+            <Button disabled>Installing &amp; resolving deps...</Button>
           )}
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -4,6 +4,8 @@ import { AddonList } from "./components/addon-list";
 import { AddonDetail } from "./components/addon-detail";
 import { InstallDialog } from "./components/install-dialog";
 import { Settings } from "./components/settings";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
 import type { AddonManifest, UpdateCheckResult, InstallResult } from "./types";
 
 export type SortMode = "name" | "author" | "recent";
@@ -147,7 +149,6 @@ function App() {
 
   const filteredAddons = addons
     .filter((addon) => {
-      // Text search
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const matchesSearch =
@@ -156,7 +157,6 @@ function App() {
           addon.author.toLowerCase().includes(q);
         if (!matchesSearch) return false;
       }
-      // Category filter
       switch (filterMode) {
         case "addons":
           return !addon.isLibrary;
@@ -190,49 +190,62 @@ function App() {
     : null;
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>ESO Addon Manager</h1>
-        <div className="header-actions">
-          <span className="addon-count">
+    <div className="flex h-screen flex-col">
+      <header className="flex items-center justify-between border-b border-border bg-card px-5 py-3 select-none">
+        <h1 className="text-lg font-semibold tracking-wide text-primary">
+          ESO Addon Manager
+        </h1>
+        <div className="flex items-center gap-2">
+          <span className="mr-2 text-xs text-muted-foreground">
             {addons.length} addons
             {missingDepCount > 0 && ` \u00b7 ${missingDepCount} with issues`}
             {checkingUpdates && (
-              <span className="checking-updates">
-                {" "}
-                \u00b7 <span className="spinner-small" /> Checking updates...
+              <span className="ml-1 inline-flex items-center gap-1">
+                \u00b7{" "}
+                <span className="inline-block size-3 animate-spin rounded-full border-2 border-border border-t-primary" />{" "}
+                Checking updates...
               </span>
             )}
           </span>
           {updatesAvailable.length > 0 && (
-            <button
-              className="btn btn-accent"
+            <Button
               onClick={handleUpdateAll}
               disabled={updatingAll}
+              size="sm"
             >
               {updatingAll
                 ? "Updating..."
                 : `Update All (${updatesAvailable.length})`}
-            </button>
+            </Button>
           )}
-          <button
-            className="btn btn-accent"
-            onClick={() => setShowInstall(true)}
-          >
+          <Button size="sm" onClick={() => setShowInstall(true)}>
             Install
-          </button>
-          <button className="btn" onClick={handleRefresh} disabled={loading}>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading}
+          >
             {loading ? "Scanning..." : "Refresh"}
-          </button>
-          <button className="btn" onClick={() => setShowSettings(true)}>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSettings(true)}
+          >
             Settings
-          </button>
+          </Button>
         </div>
       </header>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
+          {error}
+        </Alert>
+      )}
 
-      <div className="main-content">
+      <div className="flex flex-1 overflow-hidden">
         <AddonList
           addons={filteredAddons}
           selectedAddon={selectedAddon}

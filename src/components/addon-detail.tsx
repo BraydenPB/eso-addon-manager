@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AddonManifest, UpdateCheckResult, InstallResult } from "../types";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Alert } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
 
 interface AddonDetailProps {
   addon: AddonManifest | null;
@@ -27,8 +32,8 @@ export function AddonDetail({
 
   if (!addon) {
     return (
-      <div className="detail-panel">
-        <div className="detail-empty">Select an addon to view details</div>
+      <div className="flex flex-1 items-center justify-center text-muted-foreground">
+        Select an addon to view details
       </div>
     );
   }
@@ -73,15 +78,15 @@ export function AddonDetail({
   };
 
   return (
-    <div className="detail-panel">
-      <h2 className="detail-title">{addon.title}</h2>
-      <div className="detail-folder">
+    <div className="flex-1 overflow-y-auto p-6">
+      <h2 className="text-xl font-semibold text-primary">{addon.title}</h2>
+      <div className="mt-1 mb-4 font-mono text-xs text-muted-foreground">
         {addon.folderName}/
         {addon.esouiId && (
-          <span className="detail-esoui-id">
+          <span>
             {" "}&middot;{" "}
             <a
-              className="esoui-link"
+              className="text-primary hover:underline"
               href={`https://www.esoui.com/downloads/info${addon.esouiId}`}
               target="_blank"
               rel="noopener noreferrer"
@@ -93,64 +98,73 @@ export function AddonDetail({
       </div>
 
       {updateResult?.hasUpdate && (
-        <div className="update-available">
-          <div className="update-version-info">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+          <span className="text-sm text-blue-400">
             Update available: {updateResult.currentVersion} &rarr;{" "}
             {updateResult.remoteVersion}
-          </div>
-          <button
-            className="btn btn-accent"
-            onClick={handleUpdate}
-            disabled={updating}
-          >
+          </span>
+          <Button onClick={handleUpdate} disabled={updating} size="sm">
             {updating ? "Updating..." : "Update"}
-          </button>
+          </Button>
         </div>
       )}
 
-      {updateError && <div className="install-error">{updateError}</div>}
+      {updateError && (
+        <Alert variant="destructive" className="mb-4">{updateError}</Alert>
+      )}
 
-      <dl className="detail-meta">
+      <dl className="mb-6 grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 text-sm">
         {addon.author && (
           <>
-            <dt>Author</dt>
+            <dt className="text-muted-foreground">Author</dt>
             <dd>{addon.author}</dd>
           </>
         )}
-        <dt>Version</dt>
+        <dt className="text-muted-foreground">Version</dt>
         <dd>{addon.version || addon.addonVersion || "Unknown"}</dd>
         {addon.apiVersion.length > 0 && (
           <>
-            <dt>API Version</dt>
+            <dt className="text-muted-foreground">API Version</dt>
             <dd>{addon.apiVersion.join(", ")}</dd>
           </>
         )}
-        <dt>Type</dt>
-        <dd>{addon.isLibrary ? "Library" : "Addon"}</dd>
+        <dt className="text-muted-foreground">Type</dt>
+        <dd>
+          {addon.isLibrary ? (
+            <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+              Library
+            </Badge>
+          ) : (
+            "Addon"
+          )}
+        </dd>
       </dl>
 
       {addon.description && (
-        <div className="detail-section">
-          <h3>Description</h3>
-          <p>{addon.description}</p>
+        <div className="mb-5">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Description
+          </h3>
+          <p className="text-sm">{addon.description}</p>
         </div>
       )}
 
       {addon.dependsOn.length > 0 && (
-        <div className="detail-section">
-          <h3>Required Dependencies</h3>
-          <ul className="dep-list">
+        <div className="mb-5">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Required Dependencies
+          </h3>
+          <ul className="space-y-1">
             {addon.dependsOn.map((dep) => {
               const installed = installedSet.has(dep.name);
               return (
-                <li key={dep.name}>
-                  <span className={installed ? "dep-ok" : "dep-missing"}>
+                <li key={dep.name} className="flex items-center gap-2 text-sm">
+                  <span className={installed ? "text-emerald-400" : "text-destructive"}>
                     {installed ? "\u2713" : "\u2717"}
                   </span>
                   <span>{dep.name}</span>
                   {dep.min_version !== null && (
-                    <span className="addon-item-version">
-                      {" "}
+                    <span className="text-xs text-muted-foreground">
                       &gt;={dep.min_version}
                     </span>
                   )}
@@ -162,20 +176,27 @@ export function AddonDetail({
       )}
 
       {addon.optionalDependsOn.length > 0 && (
-        <div className="detail-section">
-          <h3>Optional Dependencies</h3>
-          <ul className="dep-list">
+        <div className="mb-5">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Optional Dependencies
+          </h3>
+          <ul className="space-y-1">
             {addon.optionalDependsOn.map((dep) => {
               const installed = installedSet.has(dep.name);
               return (
-                <li key={dep.name} className="dep-optional">
-                  <span className={installed ? "dep-ok" : ""}>
+                <li
+                  key={dep.name}
+                  className={cn(
+                    "flex items-center gap-2 text-sm",
+                    !installed && "italic text-muted-foreground",
+                  )}
+                >
+                  <span className={installed ? "text-emerald-400" : ""}>
                     {installed ? "\u2713" : "\u25CB"}
                   </span>
                   <span>{dep.name}</span>
                   {dep.min_version !== null && (
-                    <span className="addon-item-version">
-                      {" "}
+                    <span className="text-xs text-muted-foreground">
                       &gt;={dep.min_version}
                     </span>
                   )}
@@ -186,44 +207,50 @@ export function AddonDetail({
         </div>
       )}
 
-      <div className="detail-actions">
+      <Separator className="my-4" />
+
+      <div>
         {!confirmingRemove ? (
-          <button
-            className="btn btn-danger"
+          <Button
+            variant="destructive"
             onClick={() => {
               setConfirmingRemove(true);
               setRemoveError(null);
             }}
           >
             Remove Addon
-          </button>
+          </Button>
         ) : (
-          <div className="confirm-remove">
-            <p className="confirm-text">
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+            <p className="mb-2 text-sm">
               Remove <strong>{addon.title}</strong>?
             </p>
             {dependents.length > 0 && (
-              <p className="confirm-warning">
+              <p className="mb-2 text-sm text-yellow-500">
                 Warning: {dependents.map((d) => d.title).join(", ")}{" "}
                 {dependents.length === 1 ? "depends" : "depend"} on this addon.
               </p>
             )}
-            {removeError && <p className="install-error">{removeError}</p>}
-            <div className="confirm-actions">
-              <button
-                className="btn"
+            {removeError && (
+              <Alert variant="destructive" className="mb-2">{removeError}</Alert>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setConfirmingRemove(false)}
                 disabled={removing}
               >
                 Cancel
-              </button>
-              <button
-                className="btn btn-danger"
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={handleRemove}
                 disabled={removing}
               >
                 {removing ? "Removing..." : "Confirm Remove"}
-              </button>
+              </Button>
             </div>
           </div>
         )}

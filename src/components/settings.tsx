@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ImportResult } from "../types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Alert } from "@/components/ui/alert";
 
 interface SettingsProps {
   addonsPath: string;
@@ -28,18 +39,12 @@ export function Settings({
     onClose();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") onClose();
-    if (e.key === "Enter") handleSave();
-  };
-
   const handleExport = async () => {
     setExportStatus(null);
     try {
       const json = await invoke<string>("export_addon_list", {
         addonsPath,
       });
-      // Copy to clipboard
       await navigator.clipboard.writeText(json);
       setExportStatus("Addon list copied to clipboard!");
     } catch (e) {
@@ -71,79 +76,92 @@ export function Settings({
   };
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div
-        className="settings-panel"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
-      >
-        <h2>Settings</h2>
-        <div className="settings-field">
-          <label htmlFor="addons-path">ESO AddOns Folder Path</label>
-          <input
-            id="addons-path"
-            type="text"
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder="C:\Users\...\Elder Scrolls Online\live\AddOns"
-            autoFocus
-          />
-        </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Settings</DialogTitle>
+        </DialogHeader>
 
-        <div className="settings-section">
-          <h3>Backup & Restore</h3>
-          <p className="settings-hint">
-            Export your tracked addon list to clipboard, or import from a
-            previously exported list.
-          </p>
-          <div className="settings-row">
-            <button className="btn" onClick={handleExport}>
-              Export to Clipboard
-            </button>
-            <button
-              className="btn"
-              onClick={handleImport}
-              disabled={importing}
+        <div className="space-y-4">
+          <div>
+            <label
+              htmlFor="addons-path"
+              className="mb-1 block text-sm text-muted-foreground"
             >
-              {importing ? "Importing..." : "Import from Clipboard"}
-            </button>
+              ESO AddOns Folder Path
+            </label>
+            <Input
+              id="addons-path"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="C:\Users\...\Elder Scrolls Online\live\AddOns"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSave();
+              }}
+            />
           </div>
-          {exportStatus && (
-            <div className="settings-status">{exportStatus}</div>
-          )}
-          {importError && (
-            <div className="install-error">{importError}</div>
-          )}
-          {importResult && (
-            <div className="import-results">
-              {importResult.installed.length > 0 && (
-                <div className="install-success">
-                  Installed: {importResult.installed.join(", ")}
-                </div>
-              )}
-              {importResult.skipped.length > 0 && (
-                <div className="settings-status">
-                  Already installed: {importResult.skipped.join(", ")}
-                </div>
-              )}
-              {importResult.failed.length > 0 && (
-                <div className="install-error">
-                  Failed: {importResult.failed.join(", ")}
-                </div>
-              )}
+
+          <Separator />
+
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Backup & Restore</h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Export your tracked addon list to clipboard, or import from a
+              previously exported list.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleExport}>
+                Export to Clipboard
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleImport}
+                disabled={importing}
+              >
+                {importing ? "Importing..." : "Import from Clipboard"}
+              </Button>
             </div>
-          )}
+            {exportStatus && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {exportStatus}
+              </p>
+            )}
+            {importError && (
+              <Alert variant="destructive" className="mt-2">
+                {importError}
+              </Alert>
+            )}
+            {importResult && (
+              <div className="mt-2 space-y-2">
+                {importResult.installed.length > 0 && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-sm text-emerald-400">
+                    Installed: {importResult.installed.join(", ")}
+                  </div>
+                )}
+                {importResult.skipped.length > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Already installed: {importResult.skipped.join(", ")}
+                  </p>
+                )}
+                {importResult.failed.length > 0 && (
+                  <Alert variant="destructive">
+                    Failed: {importResult.failed.join(", ")}
+                  </Alert>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="settings-actions">
-          <button className="btn" onClick={onClose}>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button className="btn" onClick={handleSave}>
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+          <Button onClick={handleSave}>Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
