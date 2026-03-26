@@ -281,7 +281,9 @@ pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
                     if i == 0 {
                         part.to_string()
                     } else {
-                        part.split_once('>').map_or("", |(_, rest)| rest).to_string()
+                        part.split_once('>')
+                            .map_or("", |(_, rest)| rest)
+                            .to_string()
                     }
                 })
                 .collect::<String>();
