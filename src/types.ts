@@ -55,3 +55,20 @@ export interface EsouiSearchResult {
   downloads: string;
   updated: string;
 }
+
+export interface EsouiAddonDetail {
+  id: number;
+  title: string;
+  version: string;
+  author: string;
+  description: string;
+  compatibility: string;
+  fileSize: string;
+  totalDownloads: string;
+  monthlyDownloads: string;
+  favorites: string;
+  updated: string;
+  created: string;
+  screenshots: string[];
+  downloadUrl: string;
+}

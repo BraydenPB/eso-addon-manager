@@ -138,6 +138,186 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EsouiAddonDetail {
+    pub id: u32,
+    pub title: String,
+    pub version: String,
+    pub author: String,
+    pub description: String,
+    pub compatibility: String,
+    pub file_size: String,
+    pub total_downloads: String,
+    pub monthly_downloads: String,
+    pub favorites: String,
+    pub updated: String,
+    pub created: String,
+    pub screenshots: Vec<String>,
+    pub download_url: String,
+}
+
+/// Fetch full addon page details from ESOUI.
+pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
+    let client = http_client();
+
+    let info_url = format!("https://www.esoui.com/downloads/info{}", id);
+    let body = fetch_page(&client, &info_url)?;
+    let document = Html::parse_document(&body);
+
+    // Title from og:title meta
+    let meta_sel = Selector::parse(r#"meta[property="og:title"]"#).unwrap();
+    let title = document
+        .select(&meta_sel)
+        .next()
+        .and_then(|el| el.value().attr("content"))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("Addon #{}", id));
+
+    // Version from #version div
+    let version_sel = Selector::parse("#version").unwrap();
+    let version = document
+        .select(&version_sel)
+        .next()
+        .map(|el| {
+            let text = el.text().collect::<String>();
+            text.trim()
+                .strip_prefix("Version:")
+                .or_else(|| text.trim().strip_prefix("Version"))
+                .unwrap_or(text.trim())
+                .trim()
+                .to_string()
+        })
+        .unwrap_or_default();
+
+    // Author from #author div
+    let author_sel = Selector::parse("#author").unwrap();
+    let author = document
+        .select(&author_sel)
+        .next()
+        .map(|el| {
+            let text = el.text().collect::<String>();
+            text.trim()
+                .strip_prefix("by:")
+                .unwrap_or(text.trim())
+                .trim()
+                .to_string()
+        })
+        .unwrap_or_default();
+
+    // Description from div.postmessage
+    let desc_sel = Selector::parse("div.postmessage").unwrap();
+    let description = document
+        .select(&desc_sel)
+        .next()
+        .map(|el| {
+            // Get text content, replacing <br> with newlines
+            let html = el.inner_html();
+            html.replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<br />", "\n")
+                .replace("&nbsp;", " ")
+                // Strip remaining HTML tags
+                .split('<')
+                .enumerate()
+                .map(|(i, part)| {
+                    if i == 0 {
+                        part.to_string()
+                    } else {
+                        part.splitn(2, '>').nth(1).unwrap_or("").to_string()
+                    }
+                })
+                .collect::<String>()
+                .trim()
+                .to_string()
+        })
+        .unwrap_or_default();
+
+    // File size from #size
+    let size_sel = Selector::parse("#size").unwrap();
+    let file_size = document
+        .select(&size_sel)
+        .next()
+        .map(|el| el.text().collect::<String>().trim().to_string())
+        .unwrap_or_default();
+
+    // Extract table metadata by parsing rows with two td cells
+    let tr_sel = Selector::parse("tr").unwrap();
+    let td_plain_sel = Selector::parse("td").unwrap();
+    let mut compatibility = String::new();
+    let mut total_downloads = String::new();
+    let mut monthly_downloads = String::new();
+    let mut favorites = String::new();
+    let mut updated = String::new();
+    let mut created = String::new();
+
+    for tr in document.select(&tr_sel) {
+        let tds: Vec<_> = tr.select(&td_plain_sel).collect();
+        if tds.len() >= 2 {
+            let label = tds[0].text().collect::<String>();
+            let label = label.trim().trim_end_matches(':');
+            let value = tds[1].text().collect::<String>().trim().to_string();
+            match label {
+                "Compatibility" => compatibility = value,
+                "Total downloads" => total_downloads = value,
+                "Monthly downloads" => monthly_downloads = value,
+                "Favorites" => favorites = value,
+                "Updated" => updated = value,
+                "Created" => created = value,
+                _ => {}
+            }
+        }
+    }
+
+    // Screenshots from lightbox links
+    let lightbox_sel = Selector::parse(r#"a.lightbox[rel="filepics"]"#).unwrap();
+    let screenshots: Vec<String> = document
+        .select(&lightbox_sel)
+        .filter_map(|el| el.value().attr("href"))
+        .filter(|href| href.contains("preview") && !href.contains("thumb"))
+        .map(|href| {
+            if href.starts_with("//") {
+                format!("https:{}", href)
+            } else {
+                href.to_string()
+            }
+        })
+        .collect();
+
+    // Download URL from landing page
+    let landing_url = format!(
+        "https://www.esoui.com/downloads/landing.php?fileid={}",
+        id
+    );
+    let landing_body = fetch_page(&client, &landing_url)?;
+    let landing_doc = Html::parse_document(&landing_body);
+
+    let a_sel = Selector::parse("a[href]").unwrap();
+    let download_url = landing_doc
+        .select(&a_sel)
+        .filter_map(|el| el.value().attr("href"))
+        .find(|href| href.contains("cdn.esoui.com") && href.contains(".zip"))
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
+    Ok(EsouiAddonDetail {
+        id,
+        title,
+        version,
+        author,
+        description,
+        compatibility,
+        file_size,
+        total_downloads,
+        monthly_downloads,
+        favorites,
+        updated,
+        created,
+        screenshots,
+        download_url,
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EsouiSearchResult {
     pub id: u32,
     pub title: String,
