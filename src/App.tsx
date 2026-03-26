@@ -6,6 +6,9 @@ import { InstallDialog } from "./components/install-dialog";
 import { Settings } from "./components/settings";
 import type { AddonManifest, UpdateCheckResult, InstallResult } from "./types";
 
+export type SortMode = "name" | "author" | "recent";
+export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-deps";
+
 function App() {
   const [addonsPath, setAddonsPath] = useState<string>("");
   const [addons, setAddons] = useState<AddonManifest[]>([]);
@@ -20,6 +23,8 @@ function App() {
   const [updateResults, setUpdateResults] = useState<UpdateCheckResult[]>([]);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updatingAll, setUpdatingAll] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("name");
+  const [filterMode, setFilterMode] = useState<FilterMode>("all");
 
   const checkForUpdates = useCallback(async (path: string) => {
     setCheckingUpdates(true);
@@ -117,15 +122,44 @@ function App() {
     scanAndCheck(addonsPath);
   };
 
-  const filteredAddons = addons.filter((addon) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      addon.title.toLowerCase().includes(q) ||
-      addon.folderName.toLowerCase().includes(q) ||
-      addon.author.toLowerCase().includes(q)
-    );
-  });
+  const updatesSet = new Set(
+    updateResults.filter((r) => r.hasUpdate).map((r) => r.folderName),
+  );
+
+  const filteredAddons = addons
+    .filter((addon) => {
+      // Text search
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          addon.title.toLowerCase().includes(q) ||
+          addon.folderName.toLowerCase().includes(q) ||
+          addon.author.toLowerCase().includes(q);
+        if (!matchesSearch) return false;
+      }
+      // Category filter
+      switch (filterMode) {
+        case "addons":
+          return !addon.isLibrary;
+        case "libraries":
+          return addon.isLibrary;
+        case "outdated":
+          return updatesSet.has(addon.folderName);
+        case "missing-deps":
+          return addon.missingDependencies.length > 0;
+        default:
+          return true;
+      }
+    })
+    .sort((a, b) => {
+      switch (sortMode) {
+        case "author":
+          return a.author.toLowerCase().localeCompare(b.author.toLowerCase());
+        case "name":
+        default:
+          return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
+      }
+    });
 
   const missingDepCount = addons.filter(
     (a) => a.missingDependencies.length > 0,
@@ -188,6 +222,10 @@ function App() {
           onSearchChange={setSearchQuery}
           loading={loading}
           updateResults={updateResults}
+          sortMode={sortMode}
+          onSortChange={setSortMode}
+          filterMode={filterMode}
+          onFilterChange={setFilterMode}
         />
         <AddonDetail
           addon={selectedAddon}

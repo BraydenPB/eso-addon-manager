@@ -78,7 +78,17 @@ export function AddonDetail({
       <div className="detail-folder">
         {addon.folderName}/
         {addon.esouiId && (
-          <span className="detail-esoui-id"> &middot; ESOUI #{addon.esouiId}</span>
+          <span className="detail-esoui-id">
+            {" "}&middot;{" "}
+            <a
+              className="esoui-link"
+              href={`https://www.esoui.com/downloads/info${addon.esouiId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              ESOUI #{addon.esouiId}
+            </a>
+          </span>
         )}
       </div>
 

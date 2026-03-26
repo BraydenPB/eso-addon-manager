@@ -1,4 +1,5 @@
 import type { AddonManifest, UpdateCheckResult } from "../types";
+import type { SortMode, FilterMode } from "../App";
 
 interface AddonListProps {
   addons: AddonManifest[];
@@ -8,6 +9,10 @@ interface AddonListProps {
   onSearchChange: (query: string) => void;
   loading: boolean;
   updateResults: UpdateCheckResult[];
+  sortMode: SortMode;
+  onSortChange: (mode: SortMode) => void;
+  filterMode: FilterMode;
+  onFilterChange: (mode: FilterMode) => void;
 }
 
 export function AddonList({
@@ -18,6 +23,10 @@ export function AddonList({
   onSearchChange,
   loading,
   updateResults,
+  sortMode,
+  onSortChange,
+  filterMode,
+  onFilterChange,
 }: AddonListProps) {
   const updatesMap = new Map(
     updateResults
@@ -34,6 +43,38 @@ export function AddonList({
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
         />
+      </div>
+      <div className="list-toolbar">
+        <div className="filter-tabs">
+          {(
+            [
+              ["all", "All"],
+              ["addons", "Addons"],
+              ["libraries", "Libs"],
+              ["outdated", "Outdated"],
+              ["missing-deps", "Issues"],
+            ] as [FilterMode, string][]
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              className={`filter-tab ${filterMode === mode ? "active" : ""}`}
+              onClick={() => onFilterChange(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <select
+          className="sort-select"
+          value={sortMode}
+          onChange={(e) => onSortChange(e.target.value as SortMode)}
+        >
+          <option value="name">Name</option>
+          <option value="author">Author</option>
+        </select>
+      </div>
+      <div className="list-count">
+        {addons.length} {addons.length === 1 ? "addon" : "addons"}
       </div>
       <div className="addon-list">
         {loading ? (
