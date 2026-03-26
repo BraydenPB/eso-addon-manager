@@ -758,7 +758,7 @@ pub fn check_api_compatibility(addons_path: String) -> Result<ApiCompatInfo, Str
                 continue;
             }
             // Addon is compatible if any of its API versions matches the game's
-            let compatible = m.api_version.iter().any(|&v| v == game_api_version);
+            let compatible = m.api_version.contains(&game_api_version);
             if compatible {
                 up_to_date_addons.push(m.title);
             } else {

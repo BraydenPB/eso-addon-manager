@@ -78,9 +78,8 @@ pub fn parse_manifest(folder_name: &str, manifest_path: &Path) -> Option<AddonMa
     for line in content.lines() {
         let line = line.trim();
 
-        if line.starts_with("## ") {
+        if let Some(line) = line.strip_prefix("## ") {
             continuation = None;
-            let line = &line[3..];
             let Some((key, value)) = line.split_once(':') else {
                 continue;
             };

@@ -281,7 +281,7 @@ pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
                     if i == 0 {
                         part.to_string()
                     } else {
-                        part.splitn(2, '>').nth(1).unwrap_or("").to_string()
+                        part.split_once('>').map_or("", |(_, rest)| rest).to_string()
                     }
                 })
                 .collect::<String>();
@@ -432,7 +432,7 @@ pub fn search_esoui(query: &str) -> Result<Vec<EsouiSearchResult>, String> {
             if let Some(a) = cell.select(&a_sel).find(|a| {
                 a.value()
                     .attr("href")
-                    .map_or(false, |h| h.contains("fileinfo.php"))
+                    .is_some_and(|h| h.contains("fileinfo.php"))
             }) {
                 let href = a.value().attr("href").unwrap_or("");
                 if let Some(caps) = re_id.captures(href) {
