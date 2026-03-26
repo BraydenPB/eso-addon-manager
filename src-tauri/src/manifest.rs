@@ -97,19 +97,32 @@ pub fn parse_manifest(folder_name: &str, manifest_path: &Path) -> Option<AddonMa
                 _ => {}
             }
         } else if !line.is_empty() && !line.starts_with('#') {
-            // Continuation line for multi-line DependsOn
-            match continuation {
-                Some("DependsOn") => {
-                    depends_on_raw.push(' ');
-                    depends_on_raw.push_str(line);
+            // Continuation line for multi-line DependsOn.
+            // Valid dep lines only contain addon names (word chars, hyphens, dots, >=).
+            // Stop if we hit file listings (.lua, .xml, paths with /, ;, :).
+            let looks_like_deps = !line.contains(".lua")
+                && !line.contains(".xml")
+                && !line.contains('/')
+                && !line.contains('\\')
+                && !line.contains(';')
+                && !line.contains(':');
+
+            if looks_like_deps {
+                match continuation {
+                    Some("DependsOn") => {
+                        depends_on_raw.push(' ');
+                        depends_on_raw.push_str(line);
+                    }
+                    Some("OptionalDependsOn") => {
+                        optional_depends_on_raw.push(' ');
+                        optional_depends_on_raw.push_str(line);
+                    }
+                    _ => {
+                        continuation = None;
+                    }
                 }
-                Some("OptionalDependsOn") => {
-                    optional_depends_on_raw.push(' ');
-                    optional_depends_on_raw.push_str(line);
-                }
-                _ => {
-                    continuation = None;
-                }
+            } else {
+                continuation = None;
             }
         }
     }
