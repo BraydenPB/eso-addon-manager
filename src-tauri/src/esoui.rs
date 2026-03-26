@@ -136,6 +136,101 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EsouiSearchResult {
+    pub id: u32,
+    pub title: String,
+    pub author: String,
+    pub category: String,
+    pub downloads: String,
+    pub updated: String,
+}
+
+/// Search ESOUI and return rich results with metadata.
+pub fn search_esoui(query: &str) -> Result<Vec<EsouiSearchResult>, String> {
+    let client = http_client();
+    let url = format!(
+        "https://www.esoui.com/downloads/search.php?search={}&se_search=files",
+        query
+    );
+    let body = fetch_page(&client, &url)?;
+    let document = Html::parse_document(&body);
+
+    let re_id = Regex::new(r"[?&]id=(\d+)").unwrap();
+    let row_sel = Selector::parse("tr").unwrap();
+    let td_sel = Selector::parse("td").unwrap();
+    let a_sel = Selector::parse("a[href]").unwrap();
+
+    let mut results: Vec<EsouiSearchResult> = Vec::new();
+
+    for row in document.select(&row_sel) {
+        let cells: Vec<_> = row.select(&td_sel).collect();
+        if cells.len() < 5 {
+            continue;
+        }
+
+        // Find which cell contains the fileinfo.php link (title cell)
+        let mut title_idx = None;
+        let mut title = String::new();
+        let mut id: u32 = 0;
+
+        for (i, cell) in cells.iter().enumerate() {
+            if let Some(a) = cell.select(&a_sel).find(|a| {
+                a.value()
+                    .attr("href")
+                    .map_or(false, |h| h.contains("fileinfo.php"))
+            }) {
+                let href = a.value().attr("href").unwrap_or("");
+                if let Some(caps) = re_id.captures(href) {
+                    if let Ok(parsed_id) = caps[1].parse::<u32>() {
+                        title = a.text().collect::<String>().trim().to_string();
+                        id = parsed_id;
+                        title_idx = Some(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        let title_idx = match title_idx {
+            Some(i) => i,
+            None => continue,
+        };
+
+        let author = cells
+            .get(title_idx + 1)
+            .map(|c| c.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        let category = cells
+            .get(title_idx + 2)
+            .map(|c| c.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        let downloads = cells
+            .get(title_idx + 3)
+            .map(|c| c.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        let updated = cells
+            .get(title_idx + 4)
+            .map(|c| c.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+
+        results.push(EsouiSearchResult {
+            id,
+            title,
+            author,
+            category,
+            downloads,
+            updated,
+        });
+    }
+
+    Ok(results)
+}
+
 /// Search ESOUI for an addon by name, return the best-matching ESOUI ID.
 /// Searches the ESOUI search page and matches results by title.
 pub fn search_addon_by_name(name: &str) -> Result<Option<u32>, String> {

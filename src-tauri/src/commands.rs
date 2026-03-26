@@ -1,4 +1,4 @@
-use crate::esoui::{self, EsouiAddonInfo};
+use crate::esoui::{self, EsouiAddonInfo, EsouiSearchResult};
 use crate::installer;
 use crate::manifest::{self, AddonManifest};
 use crate::metadata;
@@ -158,6 +158,14 @@ pub fn scan_installed_addons(addons_path: String) -> Result<Vec<AddonManifest>, 
 pub fn resolve_esoui_addon(input: String) -> Result<EsouiAddonInfo, String> {
     let id = esoui::parse_esoui_input(&input)?;
     esoui::fetch_addon_info(id)
+}
+
+#[tauri::command]
+pub fn search_esoui_addons(query: String) -> Result<Vec<EsouiSearchResult>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    esoui::search_esoui(&query)
 }
 
 #[tauri::command]

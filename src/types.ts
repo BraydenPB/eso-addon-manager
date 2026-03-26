@@ -46,3 +46,12 @@ export interface ImportResult {
   failed: string[];
   skipped: string[];
 }
+
+export interface EsouiSearchResult {
+  id: number;
+  title: string;
+  author: string;
+  category: string;
+  downloads: string;
+  updated: string;
+}

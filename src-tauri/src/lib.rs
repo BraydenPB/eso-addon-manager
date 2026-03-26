@@ -12,6 +12,7 @@ pub fn run() {
             commands::detect_addons_folder,
             commands::scan_installed_addons,
             commands::resolve_esoui_addon,
+            commands::search_esoui_addons,
             commands::install_addon,
             commands::remove_addon,
             commands::check_for_updates,

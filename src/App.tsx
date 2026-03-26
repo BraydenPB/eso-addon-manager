@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { AddonList } from "./components/addon-list";
 import { AddonDetail } from "./components/addon-detail";
 import { InstallDialog } from "./components/install-dialog";
+import { BrowseEsoui } from "./components/browse-esoui";
 import { Settings } from "./components/settings";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
@@ -22,6 +23,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
+  const [showBrowse, setShowBrowse] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [updateResults, setUpdateResults] = useState<UpdateCheckResult[]>([]);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -119,6 +121,10 @@ function App() {
       if (e.ctrlKey && e.key === "i") {
         e.preventDefault();
         setShowInstall(true);
+      }
+      if (e.ctrlKey && e.key === "b") {
+        e.preventDefault();
+        setShowBrowse(true);
       }
     };
     window.addEventListener("keydown", handler);
@@ -242,8 +248,11 @@ function App() {
                 : `Update All (${updatesAvailable.length})`}
             </Button>
           )}
-          <Button size="sm" onClick={() => setShowInstall(true)}>
-            Install
+          <Button size="sm" onClick={() => setShowBrowse(true)}>
+            Browse
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowInstall(true)}>
+            Install by URL
           </Button>
           <Button
             variant="outline"
@@ -295,6 +304,14 @@ function App() {
           onUpdated={handleRefresh}
         />
       </div>
+
+      {showBrowse && (
+        <BrowseEsoui
+          addonsPath={addonsPath}
+          onInstalled={handleRefresh}
+          onClose={() => setShowBrowse(false)}
+        />
+      )}
 
       {showInstall && (
         <InstallDialog
