@@ -389,15 +389,24 @@ pub async fn check_for_updates(addons_path: String) -> Result<Vec<UpdateCheckRes
 
 fn check_for_updates_blocking(addons_path: &str) -> Result<Vec<UpdateCheckResult>, String> {
     let addons_dir = PathBuf::from(&addons_path);
-    let store = metadata::load_metadata(&addons_dir);
+    let mut store = metadata::load_metadata(&addons_dir);
+    let mut metadata_changed = false;
 
     let mut results: Vec<UpdateCheckResult> = Vec::new();
 
-    for (folder_name, meta) in &store.addons {
+    // Snapshot keys to avoid borrow conflict with mutable store
+    let folder_names: Vec<String> = store.addons.keys().cloned().collect();
+
+    for folder_name in &folder_names {
         // Only check addons that still exist on disk
         if !addons_dir.join(folder_name).is_dir() {
             continue;
         }
+
+        let meta = match store.addons.get(folder_name) {
+            Some(m) => m.clone(),
+            None => continue,
+        };
 
         match esoui::fetch_addon_info(meta.esoui_id) {
             Ok(info) => {
@@ -418,6 +427,16 @@ fn check_for_updates_blocking(addons_path: &str) -> Result<Vec<UpdateCheckResult
                 let has_update =
                     !remote_ver.is_empty() && !local_ver.is_empty() && remote_ver != local_ver;
 
+                // Sync stored version to ESOUI format so future comparisons
+                // don't flag false updates due to format differences
+                // (e.g. local manifest "2.4.10" vs ESOUI "2.4.10" with different source).
+                if !has_update && meta.installed_version != info.version {
+                    if let Some(entry) = store.addons.get_mut(folder_name) {
+                        entry.installed_version = info.version.clone();
+                        metadata_changed = true;
+                    }
+                }
+
                 results.push(UpdateCheckResult {
                     folder_name: folder_name.clone(),
                     esoui_id: meta.esoui_id,
@@ -435,6 +454,11 @@ fn check_for_updates_blocking(addons_path: &str) -> Result<Vec<UpdateCheckResult
 
         // Small delay between requests to be respectful to ESOUI
         std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    // Persist any version syncs
+    if metadata_changed {
+        let _ = metadata::save_metadata(&addons_dir, &store);
     }
 
     Ok(results)
