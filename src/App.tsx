@@ -11,9 +11,9 @@ import { Characters } from "./components/characters";
 import { Settings } from "./components/settings";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getSetting, setSetting } from "@/lib/store";
-import { RefreshCwIcon, SettingsIcon } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { RefreshCwIcon, SettingsIcon, MinusIcon, SquareIcon, XIcon } from "lucide-react";
 import type { AddonManifest, UpdateCheckResult, InstallResult, EsouiSearchResult } from "./types";
 
 export type SortMode = "name" | "author";
@@ -359,11 +359,6 @@ function App() {
     [addons, searchQuery, filterMode, sortMode, updatesSet]
   );
 
-  const missingDepCount = useMemo(
-    () => addons.filter((a) => a.missingDependencies.length > 0).length,
-    [addons]
-  );
-
   const selectedUpdateResult = selectedAddon
     ? (updateResults.find((r) => r.folderName === selectedAddon.folderName) ?? null)
     : null;
@@ -379,92 +374,104 @@ function App() {
         <div className="absolute top-[30%] left-[40%] h-[400px] w-[400px] rounded-full bg-indigo-500/10 blur-[100px] animate-[orb-drift_30s_ease-in-out_infinite]" />
       </div>
 
-      <TooltipProvider>
-        <header className="relative flex items-center justify-between border-b border-white/[0.06] bg-[rgba(10,18,36,0.85)] backdrop-blur-xl backdrop-saturate-[1.2] px-5 py-3.5 select-none shadow-[0_4px_24px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.05)]">
-          {/* Bottom glow line */}
-          <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#c4a44a]/30 to-transparent" />
-          <h1 className="font-heading text-lg font-semibold tracking-wide bg-gradient-to-r from-[#c4a44a] to-[#d4b45a] bg-clip-text text-transparent">
-            ESO Addon Manager
-          </h1>
-          <div className="flex items-center gap-2">
-            {batchMode ? (
-              <>
-                <span className="mr-2 text-xs text-primary font-medium">
-                  {selectedFolders.size} selected
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleBatchUpdate}
-                  disabled={updatingAll}
-                >
-                  {updatingAll ? "Updating..." : "Update Selected"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleBatchRemove}
-                  disabled={batchRemoving}
-                >
-                  {batchRemoving ? "Removing..." : "Remove Selected"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setSelectedFolders(new Set())}>
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <>
-                <span
-                  className="mr-2 text-xs text-muted-foreground"
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  {addons.length} addons
-                  {missingDepCount > 0 && ` \u00b7 ${missingDepCount} with issues`}
-                  {checkingUpdates && (
-                    <span className="ml-1 inline-flex items-center gap-1">
-                      \u00b7{" "}
-                      <span className="inline-block size-3 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />{" "}
-                      Checking...
-                    </span>
-                  )}
-                </span>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={handleRefresh}
-                        disabled={loading}
-                        aria-label="Refresh addons"
-                      />
-                    }
-                  >
-                    <RefreshCwIcon className={loading ? "animate-spin" : ""} />
-                  </TooltipTrigger>
-                  <TooltipContent>Refresh (Ctrl+R)</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => setShowSettings(true)}
-                        aria-label="Settings"
-                      />
-                    }
-                  >
-                    <SettingsIcon />
-                  </TooltipTrigger>
-                  <TooltipContent>Settings</TooltipContent>
-                </Tooltip>
-              </>
-            )}
-          </div>
-        </header>
-      </TooltipProvider>
+      <header
+        data-tauri-drag-region
+        className="relative flex items-center border-b border-white/[0.06] bg-[rgba(10,18,36,0.85)] backdrop-blur-xl backdrop-saturate-[1.2] px-4 py-2 select-none shadow-[0_4px_24px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.05)]"
+      >
+        {/* Bottom glow line */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#c4a44a]/30 to-transparent" />
+        <h1 className="font-heading text-sm font-semibold tracking-wide bg-gradient-to-r from-[#c4a44a] to-[#d4b45a] bg-clip-text text-transparent">
+          ESO Addon Manager
+        </h1>
+        <div className="flex-1" data-tauri-drag-region />
+        <div className="flex items-center gap-2">
+          {batchMode ? (
+            <>
+              <span className="mr-2 text-xs text-primary font-medium">
+                {selectedFolders.size} selected
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBatchUpdate}
+                disabled={updatingAll}
+              >
+                {updatingAll ? "Updating..." : "Update Selected"}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleBatchRemove}
+                disabled={batchRemoving}
+              >
+                {batchRemoving ? "Removing..." : "Remove Selected"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setSelectedFolders(new Set())}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <span
+                className="mr-1 text-xs text-muted-foreground/50"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {addons.length} addons
+                {checkingUpdates && (
+                  <span className="ml-1 inline-flex items-center gap-1">
+                    \u00b7{" "}
+                    <span className="inline-block size-3 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
+                  </span>
+                )}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleRefresh}
+                disabled={loading}
+                aria-label="Refresh addons"
+                title="Refresh (Ctrl+R)"
+              >
+                <RefreshCwIcon className={loading ? "animate-spin" : ""} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setShowSettings(true)}
+                aria-label="Settings"
+                title="Settings"
+              >
+                <SettingsIcon />
+              </Button>
+            </>
+          )}
+        </div>
+        {/* Window controls */}
+        <div className="flex items-center ml-3 -mr-2">
+          <button
+            onClick={() => getCurrentWindow().minimize()}
+            className="flex items-center justify-center w-8 h-8 text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            aria-label="Minimize"
+          >
+            <MinusIcon className="size-3.5" />
+          </button>
+          <button
+            onClick={() => getCurrentWindow().toggleMaximize()}
+            className="flex items-center justify-center w-8 h-8 text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            aria-label="Maximize"
+          >
+            <SquareIcon className="size-3" />
+          </button>
+          <button
+            onClick={() => getCurrentWindow().close()}
+            className="flex items-center justify-center w-8 h-8 text-muted-foreground/60 hover:text-foreground hover:bg-red-500/20 transition-colors rounded-tr-sm"
+            aria-label="Close"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        </div>
+      </header>
 
       {error && (
         <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
