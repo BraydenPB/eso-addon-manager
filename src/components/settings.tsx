@@ -24,6 +24,7 @@ interface SettingsProps {
   onShowBackups: () => void;
   onShowApiCompat: () => void;
   onShowCharacters: () => void;
+  onCheckForAppUpdate: () => void;
 }
 
 export function Settings({
@@ -34,6 +35,7 @@ export function Settings({
   onShowBackups,
   onShowApiCompat,
   onShowCharacters,
+  onCheckForAppUpdate,
 }: SettingsProps) {
   const [path, setPath] = useState(addonsPath);
   const [importing, setImporting] = useState(false);
@@ -169,6 +171,9 @@ export function Settings({
               </Button>
               <Button variant="outline" size="sm" onClick={onShowApiCompat}>
                 API Compatibility
+              </Button>
+              <Button variant="outline" size="sm" onClick={onCheckForAppUpdate}>
+                Check for App Updates
               </Button>
             </div>
             {minionDetected && (
