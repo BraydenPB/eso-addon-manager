@@ -254,12 +254,20 @@ pub fn install_addon(
     // Load metadata store and record the install
     let mut store = metadata::load_metadata(&addons_dir);
 
-    // Record metadata for each installed folder
+    // Record metadata — use ESOUI version when available so
+    // check_for_updates compares like-for-like.
+    let esoui_version = esoui::fetch_addon_info(esoui_id)
+        .map(|info| info.version)
+        .unwrap_or_default();
     for folder in &installed_folders {
-        let version = find_manifest(&addons_dir, folder)
-            .and_then(|p| manifest::parse_manifest(folder, &p))
-            .map(|m| m.version)
-            .unwrap_or_default();
+        let version = if esoui_version.is_empty() {
+            find_manifest(&addons_dir, folder)
+                .and_then(|p| manifest::parse_manifest(folder, &p))
+                .map(|m| m.version)
+                .unwrap_or_default()
+        } else {
+            esoui_version.clone()
+        };
         metadata::record_install(&mut store, folder, esoui_id, &version, &download_url);
     }
 
@@ -429,14 +437,18 @@ pub fn update_addon(addons_path: String, esoui_id: u32) -> Result<InstallResult,
     let tmp_file = esoui::download_addon(&info.download_url)?;
     let installed_folders = installer::extract_addon_zip(tmp_file.path(), &addons_dir)?;
 
-    // Update metadata
+    // Update metadata — store the ESOUI version so check_for_updates
+    // compares like-for-like (both from ESOUI), avoiding mismatches
+    // between local manifest versions and ESOUI-reported versions.
     let mut store = metadata::load_metadata(&addons_dir);
     for folder in &installed_folders {
-        let version = find_manifest(&addons_dir, folder)
-            .and_then(|p| manifest::parse_manifest(folder, &p))
-            .map(|m| m.version)
-            .unwrap_or_default();
-        metadata::record_install(&mut store, folder, esoui_id, &version, &info.download_url);
+        metadata::record_install(
+            &mut store,
+            folder,
+            esoui_id,
+            &info.version,
+            &info.download_url,
+        );
     }
     metadata::save_metadata(&addons_dir, &store)?;
 
