@@ -188,8 +188,22 @@ fn scan_installed_addons_blocking(addons_path: &str) -> Result<Vec<AddonManifest
         }
     }
 
-    // Load metadata to enrich addons with ESOUI IDs
-    let store = metadata::load_metadata(&addons_dir);
+    // Load metadata and clean up stale entries:
+    // - Remove entries for addon folders that no longer exist on disk
+    // - Deduplicate entries with the same esoui_id (keep the one that exists)
+    let mut store = metadata::load_metadata(&addons_dir);
+    let stale: Vec<String> = store
+        .addons
+        .keys()
+        .filter(|name| !addons_dir.join(name).is_dir())
+        .cloned()
+        .collect();
+    if !stale.is_empty() {
+        for name in &stale {
+            metadata::remove_entry(&mut store, name);
+        }
+        let _ = metadata::save_metadata(&addons_dir, &store);
+    }
 
     // Check for missing dependencies and enrich with ESOUI ID
     for addon in &mut addons {

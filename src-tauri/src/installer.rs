@@ -80,6 +80,10 @@ pub fn extract_addon_zip(zip_path: &Path, addons_dir: &Path) -> Result<Vec<Strin
         }
     }
 
+    if created_folders.is_empty() {
+        return Err("ZIP archive contained no addon folders.".to_string());
+    }
+
     Ok(created_folders.into_iter().collect())
 }
 
