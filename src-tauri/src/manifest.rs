@@ -2,19 +2,15 @@ use regex::Regex;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use std::sync::LazyLock;
-
-/// Regex that matches ESO rich-text formatting codes:
-///   |cXXXXXX  — color start (6 or 8 hex digits)
-///   |r        — color reset
-///   |t        — tab
-///   |u..:|u   — hyperlink markup
-static ESO_FORMAT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\|c[0-9a-f]{6}|\|r|\|t|\|u[^|]*:\|u").unwrap());
+use std::sync::OnceLock;
 
 /// Strip ESO rich-text formatting codes from a string.
+/// Matches: |cXXXXXX (color), |r (reset), |t (tab), |u..:|u (hyperlink).
 fn strip_eso_codes(s: &str) -> String {
-    ESO_FORMAT_RE.replace_all(s, "").trim().to_string()
+    static ESO_FORMAT_RE: OnceLock<Regex> = OnceLock::new();
+    let re = ESO_FORMAT_RE
+        .get_or_init(|| Regex::new(r"(?i)\|c[0-9a-f]{6}|\|r|\|t|\|u[^|]*:\|u").unwrap());
+    re.replace_all(s, "").trim().to_string()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,4 +162,133 @@ pub fn parse_manifest(folder_name: &str, manifest_path: &Path) -> Option<AddonMa
         missing_dependencies: Vec::new(),
         esoui_id: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    fn write_manifest(dir: &Path, folder: &str, content: &str) -> PathBuf {
+        let addon_dir = dir.join(folder);
+        fs::create_dir_all(&addon_dir).unwrap();
+        let path = addon_dir.join(format!("{}.txt", folder));
+        let mut f = fs::File::create(&path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn parses_basic_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "\
+## Title: My Cool Addon
+## Author: TestAuthor
+## Version: 1.2.3
+## APIVersion: 101042
+## Description: A test addon
+";
+        let path = write_manifest(dir.path(), "MyCoolAddon", content);
+        let m = parse_manifest("MyCoolAddon", &path).unwrap();
+
+        assert_eq!(m.title, "My Cool Addon");
+        assert_eq!(m.author, "TestAuthor");
+        assert_eq!(m.version, "1.2.3");
+        assert_eq!(m.api_version, vec![101042]);
+        assert_eq!(m.description, "A test addon");
+        assert!(!m.is_library);
+        assert!(m.depends_on.is_empty());
+    }
+
+    #[test]
+    fn parses_library_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "\
+## Title: LibStub
+## IsLibrary: true
+";
+        let path = write_manifest(dir.path(), "LibStub", content);
+        let m = parse_manifest("LibStub", &path).unwrap();
+
+        assert!(m.is_library);
+    }
+
+    #[test]
+    fn parses_dependencies_with_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "\
+## Title: TestAddon
+## DependsOn: LibAddonMenu-2.0>=32 LibStub
+## OptionalDependsOn: LibAsync
+";
+        let path = write_manifest(dir.path(), "TestAddon", content);
+        let m = parse_manifest("TestAddon", &path).unwrap();
+
+        assert_eq!(m.depends_on.len(), 2);
+        assert_eq!(m.depends_on[0].name, "LibAddonMenu-2.0");
+        assert_eq!(m.depends_on[0].min_version, Some(32));
+        assert_eq!(m.depends_on[1].name, "LibStub");
+        assert_eq!(m.depends_on[1].min_version, None);
+        assert_eq!(m.optional_depends_on.len(), 1);
+        assert_eq!(m.optional_depends_on[0].name, "LibAsync");
+    }
+
+    #[test]
+    fn parses_multiple_api_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "\
+## Title: TestAddon
+## APIVersion: 101042 101043
+";
+        let path = write_manifest(dir.path(), "TestAddon", content);
+        let m = parse_manifest("TestAddon", &path).unwrap();
+
+        assert_eq!(m.api_version, vec![101042, 101043]);
+    }
+
+    #[test]
+    fn strips_eso_formatting_codes() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "\
+## Title: |cFFD700Fancy|r Addon
+## Author: |c00FF00Green|r Author
+";
+        let path = write_manifest(dir.path(), "FancyAddon", content);
+        let m = parse_manifest("FancyAddon", &path).unwrap();
+
+        assert_eq!(m.title, "Fancy Addon");
+        assert_eq!(m.author, "Green Author");
+    }
+
+    #[test]
+    fn falls_back_to_folder_name_for_empty_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "\
+## Version: 1.0
+";
+        let path = write_manifest(dir.path(), "NoTitle", content);
+        let m = parse_manifest("NoTitle", &path).unwrap();
+
+        assert_eq!(m.title, "NoTitle");
+    }
+
+    #[test]
+    fn parses_addon_version_number() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "\
+## Title: TestAddon
+## AddOnVersion: 42
+";
+        let path = write_manifest(dir.path(), "TestAddon", content);
+        let m = parse_manifest("TestAddon", &path).unwrap();
+
+        assert_eq!(m.addon_version, Some(42));
+    }
+
+    #[test]
+    fn returns_none_for_missing_file() {
+        let result = parse_manifest("NoSuchAddon", Path::new("/nonexistent/path.txt"));
+        assert!(result.is_none());
+    }
 }

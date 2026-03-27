@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 
 interface BackupsProps {
   addonsPath: string;
@@ -117,7 +116,7 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
           </Button>
         </div>
 
-        <Separator />
+        <div className="border-t border-white/[0.06]" />
 
         <div className="max-h-[300px] overflow-y-auto space-y-2">
           {backups.length === 0 ? (
@@ -126,7 +125,7 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
             backups.map((b) => (
               <div
                 key={b.name}
-                className="flex items-center justify-between rounded-lg border border-border p-3"
+                className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 transition-all duration-200 hover:border-white/[0.1]"
               >
                 <div>
                   <div className="font-medium text-sm">{b.name}</div>

@@ -1,11 +1,9 @@
-import { useEffect, useState, useCallback, useRef, useMemo, type RefObject } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { AddonList } from "./components/addon-list";
 import { AddonDetail } from "./components/addon-detail";
-import { InstallDialog } from "./components/install-dialog";
-import { BrowseEsoui } from "./components/browse-esoui";
-import { CategoryBrowser } from "./components/category-browser";
+import { DiscoverDetail } from "./components/discover-detail";
 import { Profiles } from "./components/profiles";
 import { Backups } from "./components/backups";
 import { ApiCompat } from "./components/api-compat";
@@ -14,23 +12,18 @@ import { Settings } from "./components/settings";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { getSetting, setSetting } from "@/lib/store";
-import type { AddonManifest, UpdateCheckResult, InstallResult } from "./types";
-
-export type SortMode = "name" | "author";
-export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-deps";
-
-/** Hook to close a dropdown when clicking outside */
-function useClickOutside(ref: RefObject<HTMLElement | null>, onClose: () => void) {
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [ref, onClose]);
-}
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { RefreshCwIcon, SettingsIcon, MinusIcon, SquareIcon, XIcon } from "lucide-react";
+import type {
+  AddonManifest,
+  UpdateCheckResult,
+  InstallResult,
+  EsouiSearchResult,
+  SortMode,
+  FilterMode,
+  ViewMode,
+  DiscoverTab,
+} from "./types";
 
 function App() {
   const [addonsPath, setAddonsPath] = useState<string>("");
@@ -39,20 +32,22 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showInstall, setShowInstall] = useState(false);
-  const [showBrowse, setShowBrowse] = useState(false);
-  const [showCategories, setShowCategories] = useState(false);
-  const [showProfiles, setShowProfiles] = useState(false);
-  const [showBackups, setShowBackups] = useState(false);
-  const [showApiCompat, setShowApiCompat] = useState(false);
-  const [showCharacters, setShowCharacters] = useState(false);
+  const [activeDialog, setActiveDialog] = useState<
+    "settings" | "profiles" | "backups" | "api-compat" | "characters" | null
+  >(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [updateResults, setUpdateResults] = useState<UpdateCheckResult[]>([]);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+
+  // Navigation
+  const [viewMode, setViewMode] = useState<ViewMode>("installed");
+  const [discoverTab, setDiscoverTab] = useState<DiscoverTab>("search");
+  const [selectedDiscoverResult, setSelectedDiscoverResult] = useState<EsouiSearchResult | null>(
+    null
+  );
 
   // Online/offline detection
   useEffect(() => {
@@ -65,11 +60,6 @@ function App() {
       window.removeEventListener("online", goOnline);
     };
   }, []);
-
-  // Header overflow menu
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
-  useClickOutside(moreMenuRef, () => setShowMoreMenu(false));
 
   // Batch selection
   const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
@@ -181,6 +171,7 @@ function App() {
           path = await invoke<string>("detect_addons_folder");
         }
         setAddonsPath(path);
+        await invoke("set_addons_path", { addonsPath: path });
         await setSetting("addonsPath", path);
         await scanAddons(path);
         const autoUpdate = await getSetting<boolean>("autoUpdate", false);
@@ -196,9 +187,11 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — use refs to avoid re-registering the listener on state changes
   const addonsPathRef = useRef(addonsPath);
   addonsPathRef.current = addonsPath;
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -208,13 +201,18 @@ function App() {
       }
       if (e.ctrlKey && e.key === "i") {
         e.preventDefault();
-        setShowInstall(true);
+        setViewMode("discover");
+        setDiscoverTab("url");
       }
       if (e.ctrlKey && e.key === "b") {
         e.preventDefault();
-        setShowBrowse(true);
+        setViewMode("discover");
+        setDiscoverTab("search");
       }
       if (e.key === "Escape") {
+        if (viewModeRef.current === "discover") {
+          setViewMode("installed");
+        }
         setSelectedFolders(new Set());
       }
     };
@@ -228,10 +226,24 @@ function App() {
     }
   };
 
-  const handlePathChange = (newPath: string) => {
+  // Lightweight refresh after a single addon update — just rescan
+  // manifests and clear that addon's update result without re-checking
+  // every addon against ESOUI (which takes 15+ seconds).
+  const handleAddonUpdated = useCallback(
+    (esouiId: number) => {
+      if (addonsPath) {
+        scanAddons(addonsPath);
+      }
+      setUpdateResults((prev) => prev.filter((r) => r.esouiId !== esouiId));
+    },
+    [addonsPath, scanAddons]
+  );
+
+  const handlePathChange = async (newPath: string) => {
     setAddonsPath(newPath);
     setSelectedAddon(null);
     setUpdateResults([]);
+    await invoke("set_addons_path", { addonsPath: newPath });
     setSetting("addonsPath", newPath);
     scanAndCheck(newPath);
   };
@@ -264,7 +276,9 @@ function App() {
     }
     setUpdatingAll(false);
     toast.success(`Updated ${updated} addon${updated !== 1 ? "s" : ""}`);
-    scanAndCheck(addonsPath);
+    // Just rescan manifests and clear update results — don't re-check ESOUI
+    scanAddons(addonsPath);
+    setUpdateResults([]);
   };
 
   // Batch operations
@@ -321,7 +335,11 @@ function App() {
     setUpdatingAll(false);
     toast.success(`Updated ${updated} addon${updated !== 1 ? "s" : ""}`);
     setSelectedFolders(new Set());
-    scanAndCheck(addonsPath);
+    scanAddons(addonsPath);
+    setUpdateResults((prev) => {
+      const updatedIds = new Set(toUpdate.map((u) => u.esouiId));
+      return prev.filter((r) => !updatedIds.has(r.esouiId));
+    });
   };
 
   const updatesSet = useMemo(
@@ -366,21 +384,35 @@ function App() {
     [addons, searchQuery, filterMode, sortMode, updatesSet]
   );
 
-  const missingDepCount = useMemo(
-    () => addons.filter((a) => a.missingDependencies.length > 0).length,
-    [addons]
+  const selectedUpdateResult = useMemo(
+    () =>
+      selectedAddon
+        ? (updateResults.find((r) => r.folderName === selectedAddon.folderName) ?? null)
+        : null,
+    [updateResults, selectedAddon]
   );
-
-  const selectedUpdateResult = selectedAddon
-    ? (updateResults.find((r) => r.folderName === selectedAddon.folderName) ?? null)
-    : null;
 
   const batchMode = selectedFolders.size > 0;
 
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-border bg-card px-5 py-3 select-none">
-        <h1 className="text-lg font-semibold tracking-wide text-primary">ESO Addon Manager</h1>
+    <div className="relative flex h-screen flex-col">
+      {/* Ambient background orbs — gives glass morphism something to distort */}
+      <div className="fixed inset-0 -z-10 overflow-hidden bg-[#060c18]">
+        <div className="absolute -top-[15%] -left-[10%] h-[600px] w-[600px] rounded-full bg-[#c4a44a]/20 blur-[120px] animate-[orb-drift_25s_ease-in-out_infinite]" />
+        <div className="absolute -bottom-[20%] -right-[10%] h-[500px] w-[500px] rounded-full bg-sky-500/15 blur-[120px] animate-[orb-drift_20s_ease-in-out_infinite_reverse]" />
+        <div className="absolute top-[30%] left-[40%] h-[400px] w-[400px] rounded-full bg-indigo-500/10 blur-[100px] animate-[orb-drift_30s_ease-in-out_infinite]" />
+      </div>
+
+      <header
+        data-tauri-drag-region
+        className="relative flex items-center border-b border-white/[0.06] bg-[rgba(10,18,36,0.85)] backdrop-blur-xl backdrop-saturate-[1.2] px-4 py-2 select-none shadow-[0_4px_24px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.05)]"
+      >
+        {/* Bottom glow line */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#c4a44a]/30 to-transparent" />
+        <h1 className="font-heading text-sm font-semibold tracking-wide bg-gradient-to-r from-[#c4a44a] to-[#d4b45a] bg-clip-text text-transparent">
+          ESO Addon Manager
+        </h1>
+        <div className="flex-1" data-tauri-drag-region />
         <div className="flex items-center gap-2">
           {batchMode ? (
             <>
@@ -410,85 +442,63 @@ function App() {
           ) : (
             <>
               <span
-                className="mr-2 text-xs text-muted-foreground"
+                className="mr-1 text-xs text-muted-foreground/50"
                 aria-live="polite"
                 aria-atomic="true"
               >
                 {addons.length} addons
-                {missingDepCount > 0 && ` \u00b7 ${missingDepCount} with issues`}
                 {checkingUpdates && (
                   <span className="ml-1 inline-flex items-center gap-1">
                     \u00b7{" "}
-                    <span className="inline-block size-3 animate-spin rounded-full border-2 border-border border-t-primary" />{" "}
-                    Checking updates...
+                    <span className="inline-block size-3 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
                   </span>
                 )}
               </span>
-              {updatesAvailable.length > 0 && (
-                <Button onClick={handleUpdateAll} disabled={updatingAll} size="sm">
-                  {updatingAll ? "Updating..." : `Update All (${updatesAvailable.length})`}
-                </Button>
-              )}
-              <Button size="sm" onClick={() => setShowBrowse(true)}>
-                Search
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleRefresh}
+                disabled={loading}
+                aria-label="Refresh addons"
+                title="Refresh (Ctrl+R)"
+              >
+                <RefreshCwIcon className={loading ? "animate-spin" : ""} />
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowCategories(true)}>
-                Categories
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setActiveDialog("settings")}
+                aria-label="Settings"
+                title="Settings"
+              >
+                <SettingsIcon />
               </Button>
-              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
-                {loading ? "Scanning..." : "Refresh"}
-              </Button>
-              <div className="relative" ref={moreMenuRef}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowMoreMenu((v) => !v)}
-                  aria-label="More actions"
-                  aria-expanded={showMoreMenu}
-                  aria-haspopup="true"
-                >
-                  More&hellip;
-                </Button>
-                {showMoreMenu && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border border-border bg-popover p-1 shadow-md"
-                  >
-                    <button
-                      role="menuitem"
-                      className="flex w-full items-center rounded-sm px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
-                      onClick={() => {
-                        setShowMoreMenu(false);
-                        setShowInstall(true);
-                      }}
-                    >
-                      Install from URL
-                    </button>
-                    <button
-                      role="menuitem"
-                      className="flex w-full items-center rounded-sm px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
-                      onClick={() => {
-                        setShowMoreMenu(false);
-                        setShowProfiles(true);
-                      }}
-                    >
-                      Profiles
-                    </button>
-                    <button
-                      role="menuitem"
-                      className="flex w-full items-center rounded-sm px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
-                      onClick={() => {
-                        setShowMoreMenu(false);
-                        setShowSettings(true);
-                      }}
-                    >
-                      Settings
-                    </button>
-                  </div>
-                )}
-              </div>
             </>
           )}
+        </div>
+        {/* Window controls */}
+        <div className="flex items-center ml-3 -mr-2">
+          <button
+            onClick={() => getCurrentWindow().minimize()}
+            className="flex items-center justify-center w-8 h-8 text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            aria-label="Minimize"
+          >
+            <MinusIcon className="size-3.5" />
+          </button>
+          <button
+            onClick={() => getCurrentWindow().toggleMaximize()}
+            className="flex items-center justify-center w-8 h-8 text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            aria-label="Maximize"
+          >
+            <SquareIcon className="size-3" />
+          </button>
+          <button
+            onClick={() => getCurrentWindow().close()}
+            className="flex items-center justify-center w-8 h-8 text-muted-foreground/60 hover:text-foreground hover:bg-red-500/20 transition-colors rounded-tr-sm"
+            aria-label="Close"
+          >
+            <XIcon className="size-3.5" />
+          </button>
         </div>
       </header>
 
@@ -502,6 +512,18 @@ function App() {
         <Alert className="rounded-none border-x-0 border-t-0 bg-muted/50 text-muted-foreground">
           You're offline — some features may be unavailable
         </Alert>
+      )}
+
+      {/* Update banner */}
+      {updatesAvailable.length > 0 && !updatingAll && (
+        <div className="flex items-center justify-between px-5 py-2 border-b border-[#c4a44a]/15 bg-gradient-to-r from-[#c4a44a]/[0.06] via-[#c4a44a]/[0.03] to-transparent backdrop-blur-sm animate-[slide-down_0.3s_ease-out]">
+          <span className="text-sm text-[#c4a44a] font-medium">
+            {updatesAvailable.length} update{updatesAvailable.length > 1 ? "s" : ""} available
+          </span>
+          <Button onClick={handleUpdateAll} size="sm">
+            Update All
+          </Button>
+        </div>
       )}
 
       <div className="flex flex-1 overflow-hidden">
@@ -520,81 +542,67 @@ function App() {
           onFilterChange={handleFilterChange}
           selectedFolders={selectedFolders}
           onToggleSelect={handleToggleSelect}
-        />
-        <AddonDetail
-          key={selectedAddon?.folderName ?? "none"}
-          addon={selectedAddon}
-          installedAddons={addons}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          discoverTab={discoverTab}
+          onDiscoverTabChange={setDiscoverTab}
           addonsPath={addonsPath}
-          onRemove={() => {
-            setSelectedAddon(null);
-            handleRefresh();
-          }}
-          updateResult={selectedUpdateResult}
-          onUpdated={handleRefresh}
+          onInstalled={handleRefresh}
+          onSelectDiscoverResult={setSelectedDiscoverResult}
+          selectedDiscoverResultId={selectedDiscoverResult?.id ?? null}
         />
+        {viewMode === "installed" ? (
+          <AddonDetail
+            key={selectedAddon?.folderName ?? "none"}
+            addon={selectedAddon}
+            installedAddons={addons}
+            addonsPath={addonsPath}
+            onRemove={() => {
+              setSelectedAddon(null);
+              handleRefresh();
+            }}
+            updateResult={selectedUpdateResult}
+            onAddonUpdated={handleAddonUpdated}
+          />
+        ) : (
+          <DiscoverDetail
+            key={selectedDiscoverResult?.id ?? "none"}
+            result={selectedDiscoverResult}
+            addonsPath={addonsPath}
+            onInstalled={handleRefresh}
+          />
+        )}
       </div>
 
-      {showBrowse && (
-        <BrowseEsoui
-          addonsPath={addonsPath}
-          onInstalled={handleRefresh}
-          onClose={() => setShowBrowse(false)}
-        />
-      )}
-
-      {showInstall && (
-        <InstallDialog
-          addonsPath={addonsPath}
-          onInstalled={handleRefresh}
-          onClose={() => setShowInstall(false)}
-        />
-      )}
-
-      {showCategories && (
-        <CategoryBrowser
-          addonsPath={addonsPath}
-          onInstalled={handleRefresh}
-          onClose={() => setShowCategories(false)}
-        />
-      )}
-
-      {showProfiles && (
+      {activeDialog === "profiles" && (
         <Profiles
           addonsPath={addonsPath}
-          onClose={() => setShowProfiles(false)}
+          onClose={() => setActiveDialog(null)}
           onRefresh={handleRefresh}
         />
       )}
 
-      {showBackups && <Backups addonsPath={addonsPath} onClose={() => setShowBackups(false)} />}
-
-      {showApiCompat && (
-        <ApiCompat addonsPath={addonsPath} onClose={() => setShowApiCompat(false)} />
+      {activeDialog === "backups" && (
+        <Backups addonsPath={addonsPath} onClose={() => setActiveDialog(null)} />
       )}
 
-      {showCharacters && (
-        <Characters addonsPath={addonsPath} onClose={() => setShowCharacters(false)} />
+      {activeDialog === "api-compat" && (
+        <ApiCompat addonsPath={addonsPath} onClose={() => setActiveDialog(null)} />
       )}
 
-      {showSettings && (
+      {activeDialog === "characters" && (
+        <Characters addonsPath={addonsPath} onClose={() => setActiveDialog(null)} />
+      )}
+
+      {activeDialog === "settings" && (
         <Settings
           addonsPath={addonsPath}
           onPathChange={handlePathChange}
-          onClose={() => setShowSettings(false)}
+          onClose={() => setActiveDialog(null)}
           onRefresh={handleRefresh}
-          onShowBackups={() => {
-            setShowSettings(false);
-            setShowBackups(true);
-          }}
-          onShowApiCompat={() => {
-            setShowSettings(false);
-            setShowApiCompat(true);
-          }}
-          onShowCharacters={() => {
-            setShowSettings(false);
-            setShowCharacters(true);
-          }}
+          onShowBackups={() => setActiveDialog("backups")}
+          onShowApiCompat={() => setActiveDialog("api-compat")}
+          onShowCharacters={() => setActiveDialog("characters")}
         />
       )}
     </div>

@@ -1,3 +1,4 @@
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -30,6 +31,61 @@ impl Default for MetadataStore {
 
 fn metadata_path(addons_path: &Path) -> std::path::PathBuf {
     addons_path.join("eso-addon-manager.json")
+}
+
+/// Load a JSON file with automatic backup recovery.
+///
+/// If the primary file is corrupted, tries the `.json.bak` backup.
+/// Returns `T::default()` if both are missing or corrupted.
+pub fn load_json_with_backup<T: DeserializeOwned + Default>(path: &Path) -> T {
+    match fs::read_to_string(path) {
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!(
+                    "Warning: {} corrupted ({}), trying backup...",
+                    path.display(),
+                    e
+                );
+                let bak = path.with_extension("json.bak");
+                match fs::read_to_string(&bak) {
+                    Ok(bak_content) => match serde_json::from_str(&bak_content) {
+                        Ok(data) => {
+                            eprintln!("Recovered data from backup file {}.", bak.display());
+                            data
+                        }
+                        Err(e2) => {
+                            eprintln!("Backup also corrupted ({}), using defaults.", e2);
+                            T::default()
+                        }
+                    },
+                    Err(_) => {
+                        eprintln!("No backup file found, using defaults.");
+                        T::default()
+                    }
+                }
+            }
+        },
+        Err(_) => T::default(),
+    }
+}
+
+/// Save data as JSON with atomic write and automatic backup.
+///
+/// Creates a `.json.bak` of the existing file before overwriting,
+/// then writes to a `.json.tmp` file and renames atomically.
+pub fn save_json_with_backup<T: Serialize>(path: &Path, data: &T) -> Result<(), String> {
+    let json =
+        serde_json::to_string_pretty(data).map_err(|e| format!("Failed to serialize: {}", e))?;
+
+    // Create backup of existing file before writing (ignore if file doesn't exist)
+    let bak = path.with_extension("json.bak");
+    let _ = fs::copy(path, &bak);
+
+    // Write to temp file first, then atomically rename
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, &json).map_err(|e| format!("Failed to write temp file: {}", e))?;
+    fs::rename(&tmp, path).map_err(|e| format!("Failed to finalize write: {}", e))
 }
 
 pub fn format_timestamp(secs: u64) -> String {
@@ -90,50 +146,11 @@ pub fn format_timestamp(secs: u64) -> String {
 }
 
 pub fn load_metadata(addons_path: &Path) -> MetadataStore {
-    let path = metadata_path(addons_path);
-    match fs::read_to_string(&path) {
-        Ok(content) => match serde_json::from_str(&content) {
-            Ok(store) => store,
-            Err(e) => {
-                eprintln!("Warning: metadata file corrupted ({}), trying backup...", e);
-                let bak = path.with_extension("json.bak");
-                match fs::read_to_string(&bak) {
-                    Ok(bak_content) => match serde_json::from_str(&bak_content) {
-                        Ok(store) => {
-                            eprintln!("Recovered metadata from backup file.");
-                            store
-                        }
-                        Err(e2) => {
-                            eprintln!("Backup also corrupted ({}), using defaults.", e2);
-                            MetadataStore::default()
-                        }
-                    },
-                    Err(_) => {
-                        eprintln!("No backup file found, using defaults.");
-                        MetadataStore::default()
-                    }
-                }
-            }
-        },
-        Err(_) => MetadataStore::default(),
-    }
+    load_json_with_backup(&metadata_path(addons_path))
 }
 
 pub fn save_metadata(addons_path: &Path, store: &MetadataStore) -> Result<(), String> {
-    let path = metadata_path(addons_path);
-    let json =
-        serde_json::to_string_pretty(store).map_err(|e| format!("Failed to serialize: {}", e))?;
-
-    // Create backup of existing file before writing
-    if path.exists() {
-        let bak = path.with_extension("json.bak");
-        let _ = fs::copy(&path, &bak);
-    }
-
-    // Write to temp file first, then atomically rename
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, &json).map_err(|e| format!("Failed to write metadata temp file: {}", e))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("Failed to finalize metadata write: {}", e))
+    save_json_with_backup(&metadata_path(addons_path), store)
 }
 
 pub fn record_install(
@@ -161,4 +178,125 @@ pub fn record_install(
 
 pub fn remove_entry(store: &mut MetadataStore, folder_name: &str) {
     store.addons.remove(folder_name);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test.json");
+
+        let mut store = MetadataStore::default();
+        record_install(&mut store, "TestAddon", 123, "1.0.0", "https://example.com");
+
+        save_json_with_backup(&path, &store).unwrap();
+
+        let loaded: MetadataStore = load_json_with_backup(&path);
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.addons.len(), 1);
+        assert_eq!(loaded.addons["TestAddon"].esoui_id, 123);
+        assert_eq!(loaded.addons["TestAddon"].installed_version, "1.0.0");
+    }
+
+    #[test]
+    fn load_returns_default_for_missing_file() {
+        let loaded: MetadataStore = load_json_with_backup(Path::new("/nonexistent/path.json"));
+        assert_eq!(loaded.version, 1);
+        assert!(loaded.addons.is_empty());
+    }
+
+    #[test]
+    fn load_recovers_from_corrupted_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test.json");
+        let bak = tmp.path().join("test.json.bak");
+
+        // Write a valid backup
+        let mut store = MetadataStore::default();
+        record_install(&mut store, "Recovered", 42, "2.0.0", "https://example.com");
+        let json = serde_json::to_string(&store).unwrap();
+        fs::write(&bak, &json).unwrap();
+
+        // Write corrupted primary
+        fs::write(&path, "this is not valid json{{{").unwrap();
+
+        let loaded: MetadataStore = load_json_with_backup(&path);
+        assert_eq!(loaded.addons.len(), 1);
+        assert_eq!(loaded.addons["Recovered"].esoui_id, 42);
+    }
+
+    #[test]
+    fn load_returns_default_when_both_corrupted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test.json");
+        let bak = tmp.path().join("test.json.bak");
+
+        fs::write(&path, "corrupted").unwrap();
+        fs::write(&bak, "also corrupted").unwrap();
+
+        let loaded: MetadataStore = load_json_with_backup(&path);
+        assert!(loaded.addons.is_empty());
+    }
+
+    #[test]
+    fn save_creates_backup_of_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test.json");
+        let bak = tmp.path().join("test.json.bak");
+
+        // First save
+        let store1 = MetadataStore::default();
+        save_json_with_backup(&path, &store1).unwrap();
+        assert!(!bak.exists());
+
+        // Second save should create backup
+        let mut store2 = MetadataStore::default();
+        record_install(&mut store2, "New", 1, "1.0", "url");
+        save_json_with_backup(&path, &store2).unwrap();
+        assert!(bak.exists());
+
+        // Backup should contain the first version (empty addons)
+        let backup: MetadataStore =
+            serde_json::from_str(&fs::read_to_string(&bak).unwrap()).unwrap();
+        assert!(backup.addons.is_empty());
+    }
+
+    #[test]
+    fn record_and_remove_entry() {
+        let mut store = MetadataStore::default();
+
+        record_install(&mut store, "Addon1", 10, "1.0", "url1");
+        record_install(&mut store, "Addon2", 20, "2.0", "url2");
+        assert_eq!(store.addons.len(), 2);
+
+        remove_entry(&mut store, "Addon1");
+        assert_eq!(store.addons.len(), 1);
+        assert!(!store.addons.contains_key("Addon1"));
+        assert!(store.addons.contains_key("Addon2"));
+    }
+
+    #[test]
+    fn format_timestamp_produces_valid_iso8601() {
+        // 2024-01-01T00:00:00Z
+        let ts = format_timestamp(1704067200);
+        assert_eq!(ts, "2024-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn save_is_atomic_via_temp_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test.json");
+        let tmp_path = tmp.path().join("test.json.tmp");
+
+        let store = MetadataStore::default();
+        save_json_with_backup(&path, &store).unwrap();
+
+        // Temp file should not remain
+        assert!(!tmp_path.exists());
+        // Main file should exist
+        assert!(path.exists());
+    }
 }

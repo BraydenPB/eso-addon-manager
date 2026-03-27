@@ -109,3 +109,9 @@ export interface MinionMigrationResult {
   imported: number;
   alreadyTracked: number;
 }
+
+// App-level UI state types
+export type SortMode = "name" | "author";
+export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-deps";
+export type ViewMode = "installed" | "discover";
+export type DiscoverTab = "search" | "categories" | "url";

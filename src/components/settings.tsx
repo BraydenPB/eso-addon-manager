@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { Alert } from "@/components/ui/alert";
+import { SectionHeader } from "@/components/ui/section-header";
 
 interface SettingsProps {
   addonsPath: string;
@@ -138,10 +138,10 @@ export function Settings({
             </div>
           </div>
 
-          <Separator />
+          <div className="border-t border-white/[0.06]" />
 
           <div>
-            <h3 className="mb-1 text-sm font-medium">Auto-Update</h3>
+            <SectionHeader className="mb-1">Auto-Update</SectionHeader>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -156,10 +156,10 @@ export function Settings({
             </label>
           </div>
 
-          <Separator />
+          <div className="border-t border-white/[0.06]" />
 
           <div>
-            <h3 className="mb-1 text-sm font-medium">Tools</h3>
+            <SectionHeader className="mb-1">Tools</SectionHeader>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={onShowBackups}>
                 SavedVariables Backup
@@ -173,7 +173,7 @@ export function Settings({
             </div>
             {minionDetected && (
               <div className="mt-3">
-                <h3 className="mb-1 text-sm font-medium">Minion Migration</h3>
+                <SectionHeader className="mb-1">Minion Migration</SectionHeader>
                 <p className="mb-2 text-xs text-muted-foreground">
                   Minion detected. Import addon tracking data to enable update checking.
                 </p>
@@ -212,10 +212,10 @@ export function Settings({
             )}
           </div>
 
-          <Separator />
+          <div className="border-t border-white/[0.06]" />
 
           <div>
-            <h3 className="mb-1 text-sm font-medium">Addon List Backup</h3>
+            <SectionHeader className="mb-1">Addon List Backup</SectionHeader>
             <p className="mb-3 text-xs text-muted-foreground">
               Export your tracked addon list to clipboard, or import from a previously exported
               list.
@@ -237,7 +237,7 @@ export function Settings({
             {importResult && (
               <div className="mt-2 space-y-2">
                 {importResult.installed.length > 0 && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-sm text-emerald-400">
+                  <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-2 text-sm text-emerald-400">
                     Installed: {importResult.installed.join(", ")}
                   </div>
                 )}

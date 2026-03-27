@@ -13,24 +13,25 @@ jobs:
   check:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           components: rustfmt, clippy
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           workspaces: src-tauri
 
+      # --legacy-peer-deps: typescript-eslint 8.x doesn't yet support TypeScript 6
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
 
@@ -49,8 +50,16 @@ jobs:
       - name: Rust clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
+      - name: Rust dependency audit
+        run: |
+          cargo install cargo-audit --quiet
+          cargo audit --file src-tauri/Cargo.lock
+
       - name: Build frontend
         run: npm run build
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri
         run: cargo build --manifest-path src-tauri/Cargo.toml

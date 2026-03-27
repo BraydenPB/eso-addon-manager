@@ -1,24 +1,31 @@
 # ESO Addon Manager
 
-A open-source addon manager for The Elder Scrolls Online. Built with Tauri, React, and Rust.
+[![CI](https://github.com/BraydenPB/eso-addon-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/BraydenPB/eso-addon-manager/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+A fast, open-source addon manager for The Elder Scrolls Online. Built with Tauri, React, and Rust.
 
 ## Features
 
 - **Scan installed addons** — automatically detects your ESO AddOns folder and parses every addon manifest
 - **Dependency checking** — shows missing required dependencies with support for embedded/bundled libraries
-- **Install from ESOUI** — paste an ESOUI URL or addon ID to download and install addons
+- **Install from ESOUI** — paste an ESOUI URL or addon ID, or browse categories to discover and install addons
 - **Auto-install dependencies** — searches ESOUI for missing dependencies and installs them automatically
 - **Update checking** — checks ESOUI for newer versions of your tracked addons on startup and refresh
 - **One-click updates** — update individual addons or all at once
 - **Remove addons** — safely remove addons with dependency warnings
+- **Profiles** — save and switch between different addon configurations
+- **Backups** — backup and restore SavedVariables data
 - **Search and filter** — find addons quickly by name, folder, or author
-- **Dark theme** — ESO-inspired UI with gold accents
+- **Character management** — view and backup per-character settings
+- **Minion migration** — import your existing Minion addon tracking data
+- **Dark theme** — ESO-inspired glass morphism UI with gold accents
 
 ## Install
 
-### Pre-built (coming soon)
+### Pre-built
 
-Download the latest release from the [Releases](../../releases) page.
+Download the latest installer from the [Releases](https://github.com/BraydenPB/eso-addon-manager/releases) page.
 
 ### Build from source
 
@@ -29,7 +36,7 @@ Download the latest release from the [Releases](../../releases) page.
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/eso-addon-manager.git
+git clone https://github.com/BraydenPB/eso-addon-manager.git
 cd eso-addon-manager
 
 # Install frontend dependencies
@@ -54,8 +61,9 @@ The production build outputs an installer to `src-tauri/target/release/bundle/`.
 ## Tech stack
 
 - **Desktop app**: [Tauri v2](https://v2.tauri.app/) (Rust backend + webview)
-- **Frontend**: React + TypeScript + Vite
-- **HTTP**: reqwest (blocking)
+- **Frontend**: React 19 + TypeScript + Vite
+- **Styling**: Tailwind CSS v4 + shadcn/ui
+- **HTTP**: reqwest
 - **HTML parsing**: scraper
 - **ZIP handling**: zip crate
 
@@ -64,8 +72,9 @@ The production build outputs an installer to `src-tauri/target/release/bundle/`.
 ```
 src/                    # React frontend
   App.tsx               # Main app shell
-  components/           # UI components
+  components/           # Feature + UI components
   types.ts              # Shared TypeScript types
+  lib/                  # Utilities and store
 src-tauri/              # Rust backend
   src/
     commands.rs         # Tauri command handlers
@@ -73,12 +82,18 @@ src-tauri/              # Rust backend
     esoui.rs            # ESOUI scraping and downloads
     installer.rs        # ZIP extraction and addon removal
     metadata.rs         # Install tracking (JSON persistence)
-context/                # Design documents
+context/                # Design and architecture documents
 ```
 
 ## Contributing
 
-Contributions are welcome! Please open an issue first to discuss what you'd like to change.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+Please open an issue first to discuss what you'd like to change.
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 

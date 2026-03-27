@@ -1,6 +1,13 @@
 import { useCallback, useMemo, useRef } from "react";
-import type { AddonManifest, UpdateCheckResult } from "../types";
-import type { SortMode, FilterMode } from "../App";
+import type {
+  AddonManifest,
+  UpdateCheckResult,
+  EsouiSearchResult,
+  SortMode,
+  FilterMode,
+  ViewMode,
+  DiscoverTab,
+} from "../types";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DiscoverPanel } from "@/components/discover-panel";
 import { cn } from "@/lib/utils";
 
 interface AddonListProps {
@@ -28,6 +37,14 @@ interface AddonListProps {
   onFilterChange: (mode: FilterMode) => void;
   selectedFolders: Set<string>;
   onToggleSelect: (folderName: string) => void;
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
+  discoverTab: DiscoverTab;
+  onDiscoverTabChange: (tab: DiscoverTab) => void;
+  addonsPath: string;
+  onInstalled: () => void;
+  onSelectDiscoverResult: (result: EsouiSearchResult | null) => void;
+  selectedDiscoverResultId: number | null;
 }
 
 const FILTERS: [FilterMode, string][] = [
@@ -53,14 +70,17 @@ export function AddonList({
   onFilterChange,
   selectedFolders,
   onToggleSelect,
+  viewMode,
+  onViewModeChange,
+  discoverTab,
+  onDiscoverTabChange,
+  addonsPath,
+  onInstalled,
+  onSelectDiscoverResult,
+  selectedDiscoverResultId,
 }: AddonListProps) {
   const updatesMap = useMemo(
     () => new Map(updateResults.filter((r) => r.hasUpdate).map((r) => [r.folderName, r] as const)),
-    [updateResults]
-  );
-
-  const updatesSet = useMemo(
-    () => new Set(updateResults.filter((r) => r.hasUpdate).map((r) => r.folderName)),
     [updateResults]
   );
 
@@ -69,10 +89,10 @@ export function AddonList({
       all: allAddons.length,
       addons: allAddons.filter((a) => !a.isLibrary).length,
       libraries: allAddons.filter((a) => a.isLibrary).length,
-      outdated: allAddons.filter((a) => updatesSet.has(a.folderName)).length,
+      outdated: allAddons.filter((a) => updatesMap.has(a.folderName)).length,
       "missing-deps": allAddons.filter((a) => a.missingDependencies.length > 0).length,
     }),
-    [allAddons, updatesSet]
+    [allAddons, updatesMap]
   );
 
   const batchMode = selectedFolders.size > 0;
@@ -125,144 +145,201 @@ export function AddonList({
   );
 
   return (
-    <div className="flex w-[380px] min-w-[300px] flex-col border-r border-border bg-card">
-      <div className="border-b border-border p-3">
-        <Input
-          type="text"
-          placeholder="Search addons..."
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          className="bg-background"
-        />
+    <div className="flex w-[380px] min-w-[300px] flex-col border-r border-white/[0.06] bg-[rgba(10,18,36,0.6)] backdrop-blur-xl backdrop-saturate-[1.2] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      {/* Mode switcher */}
+      <div className="px-3 pt-3 pb-2">
+        <Tabs value={viewMode} onValueChange={(v) => onViewModeChange(v as ViewMode)}>
+          <TabsList className="w-full bg-white/[0.04] border border-white/[0.06] [&_[data-slot=tabs-trigger]]:data-[selected]:bg-[#c4a44a]/[0.1] [&_[data-slot=tabs-trigger]]:data-[selected]:text-[#c4a44a] [&_[data-slot=tabs-trigger]]:data-[selected]:border-[#c4a44a]/20">
+            <TabsTrigger value="installed" className="flex-1">
+              My Addons
+            </TabsTrigger>
+            <TabsTrigger value="discover" className="flex-1">
+              Discover
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <div className="flex gap-0.5" role="tablist" aria-label="Filter addons">
-          {FILTERS.map(([mode, label]) => (
-            <button
-              key={mode}
-              role="tab"
-              aria-selected={filterMode === mode}
-              aria-label={`Filter by ${label}`}
-              className={cn(
-                "rounded px-2 py-1 text-xs transition-colors",
-                filterMode === mode
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              )}
-              onClick={() => onFilterChange(mode)}
-            >
-              {label}
-              {((mode !== "outdated" && mode !== "missing-deps") || filterCounts[mode] > 0) && (
-                <span className="ml-1 opacity-60">({filterCounts[mode]})</span>
-              )}
-            </button>
-          ))}
-        </div>
-        <Select value={sortMode} onValueChange={(v) => onSortChange(v as SortMode)}>
-          <SelectTrigger size="sm" className="h-6 text-xs" aria-label="Sort by">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="name">Name</SelectItem>
-            <SelectItem value="author">Author</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="border-b border-border px-4 py-1 text-[11px] text-muted-foreground">
-        {addons.length} {addons.length === 1 ? "addon" : "addons"}
-        {batchMode && (
-          <span className="text-primary font-medium">
-            {" "}
-            &middot; {selectedFolders.size} selected
-          </span>
-        )}
-        {!batchMode && <span className="float-right opacity-50">Right-click to select</span>}
-      </div>
-      <div
-        ref={listRef}
-        role="listbox"
-        aria-label="Installed addons"
-        tabIndex={0}
-        onKeyDown={handleListKeyDown}
-        className="flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-inset"
-      >
-        {loading ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <div className="size-5 animate-spin rounded-full border-2 border-border border-t-primary" />
+
+      {viewMode === "installed" ? (
+        <>
+          {/* Search */}
+          <div className="px-3 pb-2">
+            <Input
+              type="search"
+              placeholder="Search addons..."
+              aria-label="Search addons"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
           </div>
-        ) : addons.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            No addons found
-          </div>
-        ) : (
-          addons.map((addon) => {
-            const isSelected = selectedFolders.has(addon.folderName);
-            const isCurrent = selectedAddon?.folderName === addon.folderName;
-            return (
-              <div
-                key={addon.folderName}
-                role="option"
-                aria-selected={batchMode ? isSelected : isCurrent}
+
+          {/* Filter tabs */}
+          <div
+            className="flex gap-1 px-3 pb-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="tablist"
+            aria-label="Filter addons"
+          >
+            {FILTERS.map(([mode, label]) => (
+              <button
+                key={mode}
+                role="tab"
+                aria-selected={filterMode === mode}
+                aria-label={`Filter by ${label}`}
                 className={cn(
-                  "cursor-pointer border-l-3 border-transparent px-4 py-2.5 transition-colors hover:bg-background group",
-                  isCurrent && !batchMode && "border-l-primary bg-background",
-                  isSelected && "bg-primary/5 border-l-primary"
+                  "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150",
+                  filterMode === mode
+                    ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
+                    : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
                 )}
-                onClick={() => {
-                  if (batchMode) {
-                    onToggleSelect(addon.folderName);
-                  } else {
-                    onSelect(addon);
-                  }
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  onToggleSelect(addon.folderName);
-                }}
+                onClick={() => onFilterChange(mode)}
               >
-                <div className="flex items-center gap-2">
-                  {batchMode && (
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => onToggleSelect(addon.folderName)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="shrink-0"
-                    />
-                  )}
-                  <span className="flex-1 truncate text-sm font-medium">{addon.title}</span>
-                  {updatesMap.has(addon.folderName) && (
-                    <Badge
-                      variant="outline"
-                      className="border-blue-500/30 bg-blue-500/10 text-blue-400"
-                    >
-                      Update
-                    </Badge>
-                  )}
-                  {addon.isLibrary && (
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                    >
-                      LIB
-                    </Badge>
-                  )}
-                  {addon.missingDependencies.length > 0 && (
-                    <Badge variant="destructive">{addon.missingDependencies.length} missing</Badge>
-                  )}
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {addon.version || `v${addon.addonVersion ?? "?"}`}
-                  </span>
-                </div>
-                {addon.author && (
-                  <div className={cn("mt-0.5 text-xs text-muted-foreground", batchMode && "ml-7")}>
-                    by {addon.author}
-                  </div>
+                {label}
+                {((mode !== "outdated" && mode !== "missing-deps") || filterCounts[mode] > 0) && (
+                  <span className="ml-1 opacity-50">({filterCounts[mode]})</span>
                 )}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort + count bar */}
+          <div className="flex items-center justify-between border-y border-white/[0.06] px-3 py-1.5">
+            <span className="text-[11px] font-heading font-bold uppercase tracking-[0.05em] text-muted-foreground/50">
+              {addons.length} {addons.length === 1 ? "addon" : "addons"}
+              {batchMode && (
+                <span className="text-[#c4a44a] font-medium normal-case tracking-normal">
+                  {" "}
+                  &middot; {selectedFolders.size} selected
+                </span>
+              )}
+            </span>
+            <Select value={sortMode} onValueChange={(v) => onSortChange(v as SortMode)}>
+              <SelectTrigger
+                size="sm"
+                className="h-6 w-auto gap-1 border-0 bg-transparent text-[11px] text-muted-foreground/50 hover:text-muted-foreground px-1.5"
+                aria-label="Sort by"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Name</SelectItem>
+                <SelectItem value="author">Author</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div
+            ref={listRef}
+            role="listbox"
+            aria-label="Installed addons"
+            aria-activedescendant={selectedAddon ? `addon-${selectedAddon.folderName}` : undefined}
+            tabIndex={0}
+            onKeyDown={handleListKeyDown}
+            className="flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-inset"
+          >
+            {loading ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground">
+                <div className="size-5 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
               </div>
-            );
-          })
-        )}
-      </div>
+            ) : addons.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground">
+                No addons found
+              </div>
+            ) : (
+              addons.map((addon) => {
+                const isSelected = selectedFolders.has(addon.folderName);
+                const isCurrent = selectedAddon?.folderName === addon.folderName;
+                return (
+                  <div
+                    key={addon.folderName}
+                    id={`addon-${addon.folderName}`}
+                    role="option"
+                    aria-selected={batchMode ? isSelected : isCurrent}
+                    className={cn(
+                      "cursor-pointer border-l-3 border-l-transparent px-4 py-2.5 transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/[0.04] group",
+                      addon.missingDependencies.length > 0
+                        ? "border-l-red-500 shadow-[inset_4px_0_12px_-4px_rgba(239,68,68,0.1)]"
+                        : addon.isLibrary
+                          ? "border-l-emerald-400 shadow-[inset_4px_0_12px_-4px_rgba(52,211,153,0.08)]"
+                          : updatesMap.has(addon.folderName)
+                            ? "border-l-amber-500 shadow-[inset_4px_0_12px_-4px_rgba(245,158,11,0.1)]"
+                            : "border-l-transparent",
+                      isCurrent &&
+                        !batchMode &&
+                        "bg-[#c4a44a]/[0.06] border-l-[#c4a44a]! shadow-[inset_4px_0_16px_-4px_rgba(196,164,74,0.15),inset_0_0_0_1px_rgba(196,164,74,0.08)]",
+                      isSelected && "bg-[#c4a44a]/[0.04] border-l-[#c4a44a]!"
+                    )}
+                    onClick={() => {
+                      if (batchMode) {
+                        onToggleSelect(addon.folderName);
+                      } else {
+                        onSelect(addon);
+                      }
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      onToggleSelect(addon.folderName);
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      {batchMode && (
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => onToggleSelect(addon.folderName)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="shrink-0"
+                        />
+                      )}
+                      <span className="flex-1 truncate text-sm font-medium">{addon.title}</span>
+                      {updatesMap.has(addon.folderName) && (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
+                        >
+                          Update
+                        </Badge>
+                      )}
+                      {addon.isLibrary && (
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-400/20 bg-emerald-400/[0.04] text-emerald-400 text-[10px]"
+                        >
+                          LIB
+                        </Badge>
+                      )}
+                      {addon.missingDependencies.length > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
+                        >
+                          {addon.missingDependencies.length} missing
+                        </Badge>
+                      )}
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {addon.version || `v${addon.addonVersion ?? "?"}`}
+                      </span>
+                    </div>
+                    {addon.author && (
+                      <div
+                        className={cn("mt-0.5 text-xs text-muted-foreground", batchMode && "ml-7")}
+                      >
+                        by {addon.author}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
+      ) : (
+        <DiscoverPanel
+          activeTab={discoverTab}
+          onTabChange={onDiscoverTabChange}
+          addonsPath={addonsPath}
+          onInstalled={onInstalled}
+          onSelectResult={onSelectDiscoverResult}
+          selectedResultId={selectedDiscoverResultId}
+        />
+      )}
     </div>
   );
 }

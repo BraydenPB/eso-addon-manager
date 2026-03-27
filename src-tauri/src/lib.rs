@@ -4,14 +4,30 @@ mod installer;
 mod manifest;
 mod metadata;
 
+use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
 
+/// Stores the approved addons directory path. Commands that perform
+/// write operations validate the caller-supplied path against this
+/// value, preventing a compromised webview from targeting arbitrary
+/// filesystem locations.
+pub struct AllowedAddonsPath(pub Mutex<Option<PathBuf>>);
+
 pub fn run() {
+    // Enable Chrome DevTools Protocol in debug builds only
+    #[cfg(debug_assertions)]
+    std::env::set_var(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "--remote-debugging-port=9222",
+    );
+
     tauri::Builder::default()
+        .manage(AllowedAddonsPath(Mutex::new(None)))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus the existing window when a duplicate instance is launched
             if let Some(window) = app.get_webview_window("main") {
@@ -28,7 +44,11 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
             let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().cloned().unwrap())
+                .icon(
+                    app.default_window_icon()
+                        .cloned()
+                        .expect("default window icon must be set in tauri.conf.json"),
+                )
                 .tooltip("ESO Addon Manager")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -69,6 +89,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::set_addons_path,
             commands::detect_addons_folder,
             commands::scan_installed_addons,
             commands::resolve_esoui_addon,

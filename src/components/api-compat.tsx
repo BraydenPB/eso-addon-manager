@@ -9,9 +9,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
+import { InfoPill } from "@/components/ui/info-pill";
+import { SectionHeader } from "@/components/ui/section-header";
 
 interface ApiCompatProps {
   addonsPath: string;
@@ -48,7 +48,7 @@ export function ApiCompat({ addonsPath, onClose }: ApiCompatProps) {
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <span className="inline-block size-5 animate-spin rounded-full border-2 border-border border-t-primary" />
+            <span className="inline-block size-5 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
             <span className="ml-2 text-muted-foreground">Checking compatibility...</span>
           </div>
         ) : error ? (
@@ -56,18 +56,18 @@ export function ApiCompat({ addonsPath, onClose }: ApiCompatProps) {
         ) : info ? (
           <div className="flex-1 overflow-y-auto space-y-4">
             <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">Game API Version:</span>
-              <Badge variant="outline" className="font-mono">
+              <span className="text-sm text-muted-foreground/60">Game API Version:</span>
+              <InfoPill color="sky" className="font-mono">
                 {info.gameApiVersion}
-              </Badge>
+              </InfoPill>
             </div>
 
             {info.outdatedAddons.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <h4 className="text-sm font-medium text-yellow-400">
+                  <SectionHeader className="text-amber-400!">
                     Outdated API ({info.outdatedAddons.length})
-                  </h4>
+                  </SectionHeader>
                   <span className="text-xs text-muted-foreground">
                     May need updates for current game version
                   </span>
@@ -76,7 +76,7 @@ export function ApiCompat({ addonsPath, onClose }: ApiCompatProps) {
                   {info.outdatedAddons.map((name) => (
                     <div
                       key={name}
-                      className="flex items-center gap-2 rounded px-3 py-1.5 text-sm bg-yellow-500/5 border border-yellow-500/20"
+                      className="flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm bg-amber-500/[0.04] border border-amber-500/20"
                     >
                       <span className="text-yellow-400">!</span>
                       <span>{name}</span>
@@ -86,13 +86,15 @@ export function ApiCompat({ addonsPath, onClose }: ApiCompatProps) {
               </div>
             )}
 
-            {info.outdatedAddons.length > 0 && info.upToDateAddons.length > 0 && <Separator />}
+            {info.outdatedAddons.length > 0 && info.upToDateAddons.length > 0 && (
+              <div className="border-t border-white/[0.06]" />
+            )}
 
             {info.upToDateAddons.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium text-emerald-400 mb-2">
+                <SectionHeader className="text-emerald-400! mb-2">
                   Compatible ({info.upToDateAddons.length})
-                </h4>
+                </SectionHeader>
                 <div className="space-y-1">
                   {info.upToDateAddons.map((name) => (
                     <div

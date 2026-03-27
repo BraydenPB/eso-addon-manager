@@ -63,16 +63,30 @@ Use **GitHub Flow**:
 ## Design System
 
 The UI follows the ESO Log Aggregator visual language adapted for shadcn + Tailwind v4.
-Before building or modifying any UI, read these context files:
+Reference files for design decisions:
 
 1. `context/40-design-system.md` — Design principles, colors, glass morphism, typography, animations
 2. `context/41-component-patterns.md` — Concrete shadcn component recipes
 3. `context/42-theme-tokens.md` — CSS variables, @theme inline mappings, Tailwind utilities
 
-Key rules:
+### Implemented Primitives (use these, don't reinvent)
+- `GlassPanel` (`ui/glass-panel.tsx`) — 3 variants: `primary`, `default`, `subtle`
+- `SectionHeader` (`ui/section-header.tsx`) — uppercase micro-label (11px, Space Grotesk)
+- `InfoPill` (`ui/info-pill.tsx`) — 7 colors: `gold`, `sky`, `emerald`, `amber`, `red`, `violet`, `muted`
+
+### Overridden shadcn Components
+- `Input` — glass styling (translucent bg, sky-blue focus ring)
+- `Dialog` — glass morphism overlay + gradient bg + gold gradient titles
+- `Toaster` — glass-styled toasts
+
+### Key Rules
+- Always-dark theme, no light mode
 - Glass morphism panels (three tiers: primary, default, subtle)
-- Space Grotesk for headings, Geist for body text
-- 3px colored left-border on cards for addon status
+- Space Grotesk (`font-heading`) for headings, Geist (`font-sans`) for body text
+- 3px colored left-border on addon list items for status
+- Borders: `border-white/[0.06]` not `border-border` for glass surfaces
+- Dividers: `<div className="border-t border-white/[0.06]" />` not `<Separator />`
+- Spinners: `border-white/[0.1] border-t-[#c4a44a]` not `border-border border-t-primary`
 - Animation scale: fast (150ms), normal (250ms), slow (400ms)
 - ESO gold (#c4a44a) as primary accent, sky-blue (#38bdf8) for interactive/focus
 
@@ -89,6 +103,28 @@ Key rules:
 - `gh` for GitHub operations (PRs, issues, releases)
 - `wrangler` for Cloudflare Worker deployment (when backend phase begins)
 - Local Rust/Node toolchain (`npm run tauri dev` for development)
+
+### Chrome DevTools MCP (Visual Debugging)
+
+The Tauri WebView2 exposes Chrome DevTools Protocol on **port 9222** via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, set in `lib.rs` behind `#[cfg(debug_assertions)]` so it's **only enabled in debug builds**. The Chrome DevTools MCP is configured project-locally (in `~/.claude/projects/.../settings.json`) to connect via `--browserUrl http://127.0.0.1:9222`.
+
+**Setup**: Run `npm run tauri dev` — CDP is automatically available on `localhost:9222`. Production builds are never affected.
+
+**Capabilities**:
+- `take_screenshot` — see the actual rendered UI
+- `evaluate_script` — run JS in the webview (check state, trigger actions)
+- `click` / `fill` / `hover` — interact with UI elements
+- `list_network_requests` / `get_network_request` — inspect ESOUI API calls
+- `list_console_messages` — read frontend logs
+- `take_snapshot` — get full DOM accessibility tree
+
+**Workflow for UI debugging**:
+1. User starts `npm run tauri dev`
+2. Claude connects via `list_pages` → `navigate_page` to `http://localhost:1420` → `select_page`
+3. Use `take_screenshot` to see current state
+4. Use other CDP tools to inspect, interact, and diagnose issues
+
+**Important**: CDP is only enabled in debug builds via `#[cfg(debug_assertions)]` in `lib.rs`. Production/release builds never expose the debug port.
 
 ## Context Files
 

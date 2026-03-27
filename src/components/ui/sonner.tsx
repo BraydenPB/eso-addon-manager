@@ -5,12 +5,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme="dark"
       className="toaster group"
+      toastOptions={{
+        className: "!bg-[rgba(15,23,42,0.95)] !border-white/10 !text-foreground !backdrop-blur-lg",
+      }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--normal-bg": "rgba(15, 23, 42, 0.95)",
+          "--normal-text": "var(--foreground)",
+          "--normal-border": "rgba(255, 255, 255, 0.1)",
+          "--border-radius": "0.75rem",
         } as React.CSSProperties
       }
       {...props}

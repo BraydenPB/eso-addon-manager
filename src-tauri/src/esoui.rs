@@ -5,6 +5,45 @@ use std::io;
 use std::sync::OnceLock;
 use tempfile::NamedTempFile;
 
+/// Extract version text from a `#version` div, stripping the "Version:" prefix.
+fn extract_version(document: &Html) -> String {
+    let version_sel = Selector::parse("#version").unwrap();
+    document
+        .select(&version_sel)
+        .next()
+        .map(|el| {
+            let text = el.text().collect::<String>();
+            text.trim()
+                .strip_prefix("Version:")
+                .or_else(|| text.trim().strip_prefix("Version"))
+                .unwrap_or(text.trim())
+                .trim()
+                .to_string()
+        })
+        .unwrap_or_default()
+}
+
+/// Fetch the CDN download URL from an ESOUI landing page.
+fn fetch_download_url(client: &reqwest::blocking::Client, id: u32) -> Result<String, String> {
+    let landing_url = format!("https://www.esoui.com/downloads/landing.php?fileid={}", id);
+    let landing_body = fetch_page(client, &landing_url, None)?;
+    let landing_doc = Html::parse_document(&landing_body);
+
+    let a_sel = Selector::parse("a[href]").unwrap();
+    landing_doc
+        .select(&a_sel)
+        .filter_map(|el| el.value().attr("href"))
+        .find(|href| href.contains("cdn.esoui.com") && href.contains(".zip"))
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            format!(
+                "Could not find a CDN download link for addon {}. \
+                 The addon may have been removed, or ESOUI may have changed their page layout.",
+                id
+            )
+        })
+}
+
 /// Decode common HTML entities for cleaner display text.
 fn decode_html_entities(s: &str) -> String {
     s.replace("&amp;", "&")
@@ -56,43 +95,28 @@ fn http_client() -> &'static reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) ESOAddonManager/0.1.0")
+            .user_agent(format!(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ESOAddonManager/{}",
+                env!("CARGO_PKG_VERSION")
+            ))
             .timeout(std::time::Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::limited(10))
             .build()
             .expect("failed to build HTTP client")
     })
 }
 
-fn fetch_page(client: &reqwest::blocking::Client, url: &str) -> Result<String, String> {
-    let response = client.get(url).send().map_err(|e| {
-        if e.is_connect() || e.is_timeout() {
-            "Could not connect to ESOUI. Check your internet connection.".to_string()
-        } else {
-            format!("Network error: {}", e)
-        }
-    })?;
-
-    let status = response.status();
-    if !status.is_success() {
-        return Err(match status.as_u16() {
-            404 => "Addon not found on ESOUI. It may have been removed.".to_string(),
-            429 => "Too many requests to ESOUI. Please wait a moment and try again.".to_string(),
-            500..=599 => "ESOUI is currently unavailable. Try again later.".to_string(),
-            _ => format!("ESOUI returned an error (HTTP {})", status),
-        });
-    }
-
-    response
-        .text()
-        .map_err(|e| format!("Failed to read response: {}", e))
-}
-
-fn fetch_page_with_query(
+fn fetch_page(
     client: &reqwest::blocking::Client,
     url: &str,
-    query: &[(&str, &str)],
+    query: Option<&[(&str, &str)]>,
 ) -> Result<String, String> {
-    let response = client.get(url).query(query).send().map_err(|e| {
+    let mut builder = client.get(url);
+    if let Some(q) = query {
+        builder = builder.query(q);
+    }
+
+    let response = builder.send().map_err(|e| {
         if e.is_connect() || e.is_timeout() {
             "Could not connect to ESOUI. Check your internet connection.".to_string()
         } else {
@@ -126,7 +150,7 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
 
     // Step 1: Fetch the addon info page to get the title
     let info_url = format!("https://www.esoui.com/downloads/info{}", id);
-    let body = fetch_page(client, &info_url)?;
+    let body = fetch_page(client, &info_url, None)?;
     let document = Html::parse_document(&body);
 
     // Extract title from <meta property="og:title" content="...">
@@ -138,43 +162,8 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("Addon #{}", id));
 
-    // Extract version from <div id="version">Version: X.Y.Z</div>
-    let version_sel = Selector::parse("#version").unwrap();
-    let version = document
-        .select(&version_sel)
-        .next()
-        .map(|el| {
-            let text = el.text().collect::<String>();
-            text.trim()
-                .strip_prefix("Version:")
-                .or_else(|| text.trim().strip_prefix("Version"))
-                .unwrap_or(text.trim())
-                .trim()
-                .to_string()
-        })
-        .unwrap_or_default();
-
-    // Step 2: Fetch the landing page which contains the actual CDN download link
-    let landing_url = format!("https://www.esoui.com/downloads/landing.php?fileid={}", id);
-    let landing_body = fetch_page(client, &landing_url)?;
-    let landing_doc = Html::parse_document(&landing_body);
-
-    // The landing page has a direct CDN link like:
-    // <a href="https://cdn.esoui.com/downloads/file4273/DailyTradeBars.zip?...">Click here</a>
-    // and also an iframe with the same URL
-    let a_sel = Selector::parse("a[href]").unwrap();
-    let download_url = landing_doc
-        .select(&a_sel)
-        .filter_map(|el| el.value().attr("href"))
-        .find(|href| href.contains("cdn.esoui.com") && href.contains(".zip"))
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            format!(
-                "Could not find a CDN download link (cdn.esoui.com/*.zip) on the landing page for addon {}. \
-                 The addon may have been removed, or ESOUI may have changed their page layout.",
-                id
-            )
-        })?;
+    let version = extract_version(&document);
+    let download_url = fetch_download_url(client, id)?;
 
     Ok(EsouiAddonInfo {
         id,
@@ -218,7 +207,7 @@ pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
     let client = http_client();
 
     let info_url = format!("https://www.esoui.com/downloads/info{}", id);
-    let body = fetch_page(client, &info_url)?;
+    let body = fetch_page(client, &info_url, None)?;
     let document = Html::parse_document(&body);
 
     // Title from og:title meta
@@ -230,21 +219,7 @@ pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("Addon #{}", id));
 
-    // Version from #version div
-    let version_sel = Selector::parse("#version").unwrap();
-    let version = document
-        .select(&version_sel)
-        .next()
-        .map(|el| {
-            let text = el.text().collect::<String>();
-            text.trim()
-                .strip_prefix("Version:")
-                .or_else(|| text.trim().strip_prefix("Version"))
-                .unwrap_or(text.trim())
-                .trim()
-                .to_string()
-        })
-        .unwrap_or_default();
+    let version = extract_version(&document);
 
     // Author from #author div
     let author_sel = Selector::parse("#author").unwrap();
@@ -342,32 +317,11 @@ pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
         })
         .collect();
 
-    // Download URL from landing page
-    let landing_url = format!("https://www.esoui.com/downloads/landing.php?fileid={}", id);
-    let landing_body = fetch_page(client, &landing_url)?;
-    let landing_doc = Html::parse_document(&landing_body);
+    let download_url = fetch_download_url(client, id)?;
 
-    let a_sel = Selector::parse("a[href]").unwrap();
-    let download_url = landing_doc
-        .select(&a_sel)
-        .filter_map(|el| el.value().attr("href"))
-        .find(|href| href.contains("cdn.esoui.com") && href.contains(".zip"))
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-
-    // Validate that we got the critical fields; empty title or download_url likely means
-    // ESOUI changed their page structure.
     if title.is_empty() || title == format!("Addon #{}", id) {
         return Err(format!(
-            "Could not extract addon title for addon {}. ESOUI may have changed their page layout \
-             (expected <meta property=\"og:title\"> tag).",
-            id
-        ));
-    }
-    if download_url.is_empty() {
-        return Err(format!(
-            "Could not find a CDN download link for addon {}. ESOUI may have changed their \
-             landing page layout (expected <a href=\"https://cdn.esoui.com/.../*.zip\">).",
+            "Could not extract addon title for addon {}. ESOUI may have changed their page layout.",
             id
         ));
     }
@@ -404,10 +358,10 @@ pub struct EsouiSearchResult {
 /// Search ESOUI and return rich results with metadata.
 pub fn search_esoui(query: &str) -> Result<Vec<EsouiSearchResult>, String> {
     let client = http_client();
-    let body = fetch_page_with_query(
+    let body = fetch_page(
         client,
         "https://www.esoui.com/downloads/search.php",
-        &[("search", query), ("se_search", "files")],
+        Some(&[("search", query), ("se_search", "files")]),
     )?;
     let document = Html::parse_document(&body);
 
@@ -490,10 +444,10 @@ pub fn search_esoui(query: &str) -> Result<Vec<EsouiSearchResult>, String> {
 /// Searches the ESOUI search page and matches results by title.
 pub fn search_addon_by_name(name: &str) -> Result<Option<u32>, String> {
     let client = http_client();
-    let body = fetch_page_with_query(
+    let body = fetch_page(
         client,
         "https://www.esoui.com/downloads/search.php",
-        &[("search", name), ("se_search", "files")],
+        Some(&[("search", name), ("se_search", "files")]),
     )?;
     let document = Html::parse_document(&body);
 
@@ -524,8 +478,7 @@ pub fn search_addon_by_name(name: &str) -> Result<Option<u32>, String> {
     }
 
     // No exact match found — try a looser match (link text contains the name)
-    let document2 = Html::parse_document(&body);
-    for element in document2.select(&a_sel) {
+    for element in document.select(&a_sel) {
         let href = match element.value().attr("href") {
             Some(h) if h.contains("fileinfo.php") => h,
             _ => continue,
@@ -546,12 +499,18 @@ pub fn search_addon_by_name(name: &str) -> Result<Option<u32>, String> {
     Ok(None)
 }
 
-use crate::commands::EsouiCategory;
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EsouiCategory {
+    pub id: u32,
+    pub name: String,
+    pub depth: u32,
+}
 
 /// Fetch the full category list from ESOUI search page.
 pub fn fetch_categories() -> Result<Vec<EsouiCategory>, String> {
     let client = http_client();
-    let body = fetch_page(client, "https://www.esoui.com/downloads/search.php")?;
+    let body = fetch_page(client, "https://www.esoui.com/downloads/search.php", None)?;
     let document = Html::parse_document(&body);
 
     let option_sel = Selector::parse("option[value]").unwrap();
@@ -608,7 +567,7 @@ pub fn browse_category(
         category_id, sb, page
     );
 
-    let body = fetch_page(client, &url)?;
+    let body = fetch_page(client, &url, None)?;
     let document = Html::parse_document(&body);
 
     static RE_BROWSE_ID: OnceLock<Regex> = OnceLock::new();
@@ -664,7 +623,7 @@ pub fn download_addon(url: &str) -> Result<NamedTempFile, String> {
 
     let response = client.get(url).send().map_err(|e| {
         if e.is_connect() || e.is_timeout() {
-            "Download failed — check your internet connection.".to_string()
+            "Download failed. Check your internet connection.".to_string()
         } else {
             format!("Download failed: {}", e)
         }

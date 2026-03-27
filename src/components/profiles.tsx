@@ -11,8 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
+import { InfoPill } from "@/components/ui/info-pill";
 import { cn } from "@/lib/utils";
 
 interface ProfilesProps {
@@ -127,7 +126,7 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
           </Button>
         </div>
 
-        <Separator />
+        <div className="border-t border-white/[0.06]" />
 
         <div className="max-h-[300px] overflow-y-auto space-y-2">
           {profiles.length === 0 ? (
@@ -139,14 +138,14 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
               <div
                 key={p.name}
                 className={cn(
-                  "flex items-center justify-between rounded-lg border border-border p-3",
-                  activeProfile === p.name && "border-primary/50 bg-primary/5"
+                  "flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 transition-all duration-200",
+                  activeProfile === p.name && "border-[#c4a44a]/30 bg-[#c4a44a]/[0.04]"
                 )}
               >
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-sm">{p.name}</span>
-                    {activeProfile === p.name && <Badge>Active</Badge>}
+                    {activeProfile === p.name && <InfoPill color="gold">Active</InfoPill>}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {p.enabledAddons.length} addons &middot; {p.createdAt}

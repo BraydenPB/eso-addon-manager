@@ -29,3 +29,6 @@ Thumbs.db
 
 # Plan file (working doc)
 PLAN.md
+
+# Claude Code
+.claude/
