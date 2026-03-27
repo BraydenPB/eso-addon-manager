@@ -221,6 +221,19 @@ function App() {
     }
   };
 
+  // Lightweight refresh after a single addon update — just rescan
+  // manifests and clear that addon's update result without re-checking
+  // every addon against ESOUI (which takes 15+ seconds).
+  const handleAddonUpdated = useCallback(
+    (esouiId: number) => {
+      if (addonsPath) {
+        scanAddons(addonsPath);
+      }
+      setUpdateResults((prev) => prev.filter((r) => r.esouiId !== esouiId));
+    },
+    [addonsPath, scanAddons]
+  );
+
   const handlePathChange = (newPath: string) => {
     setAddonsPath(newPath);
     setSelectedAddon(null);
@@ -257,7 +270,9 @@ function App() {
     }
     setUpdatingAll(false);
     toast.success(`Updated ${updated} addon${updated !== 1 ? "s" : ""}`);
-    scanAndCheck(addonsPath);
+    // Just rescan manifests and clear update results — don't re-check ESOUI
+    scanAddons(addonsPath);
+    setUpdateResults([]);
   };
 
   // Batch operations
@@ -314,7 +329,11 @@ function App() {
     setUpdatingAll(false);
     toast.success(`Updated ${updated} addon${updated !== 1 ? "s" : ""}`);
     setSelectedFolders(new Set());
-    scanAndCheck(addonsPath);
+    scanAddons(addonsPath);
+    setUpdateResults((prev) => {
+      const updatedIds = new Set(toUpdate.map((u) => u.esouiId));
+      return prev.filter((r) => !updatedIds.has(r.esouiId));
+    });
   };
 
   const updatesSet = useMemo(
@@ -533,7 +552,7 @@ function App() {
               handleRefresh();
             }}
             updateResult={selectedUpdateResult}
-            onUpdated={handleRefresh}
+            onAddonUpdated={handleAddonUpdated}
           />
         ) : (
           <DiscoverDetail

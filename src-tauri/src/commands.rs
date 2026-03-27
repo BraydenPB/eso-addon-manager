@@ -440,7 +440,20 @@ pub fn update_addon(addons_path: String, esoui_id: u32) -> Result<InstallResult,
     // Update metadata — store the ESOUI version so check_for_updates
     // compares like-for-like (both from ESOUI), avoiding mismatches
     // between local manifest versions and ESOUI-reported versions.
+    // Also clean up any old metadata entries for the same esoui_id
+    // that aren't in the newly extracted folders (handles addon renames).
     let mut store = metadata::load_metadata(&addons_dir);
+    let old_folders: Vec<String> = store
+        .addons
+        .iter()
+        .filter(|(_, m)| m.esoui_id == esoui_id)
+        .map(|(name, _)| name.clone())
+        .collect();
+    for old in &old_folders {
+        if !installed_folders.contains(old) {
+            metadata::remove_entry(&mut store, old);
+        }
+    }
     for folder in &installed_folders {
         metadata::record_install(
             &mut store,

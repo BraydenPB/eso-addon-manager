@@ -15,7 +15,7 @@ interface AddonDetailProps {
   addonsPath: string;
   onRemove: () => void;
   updateResult: UpdateCheckResult | null;
-  onUpdated: () => void;
+  onAddonUpdated: (esouiId: number) => void;
 }
 
 export function AddonDetail({
@@ -24,7 +24,7 @@ export function AddonDetail({
   addonsPath,
   onRemove,
   updateResult,
-  onUpdated,
+  onAddonUpdated,
 }: AddonDetailProps) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -100,7 +100,7 @@ export function AddonDetail({
         esouiId: updateResult.esouiId,
       });
       toast.success(`Updated ${addon.title}`);
-      onUpdated();
+      onAddonUpdated(updateResult.esouiId);
     } catch (e) {
       setUpdateError(String(e));
     } finally {
