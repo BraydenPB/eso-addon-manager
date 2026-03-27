@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { useAppUpdate, AppUpdateBanner } from "./components/app-update";
 import { AddonList } from "./components/addon-list";
 import { AddonDetail } from "./components/addon-detail";
 import { DiscoverDetail } from "./components/discover-detail";
@@ -48,6 +49,14 @@ function App() {
   const [selectedDiscoverResult, setSelectedDiscoverResult] = useState<EsouiSearchResult | null>(
     null
   );
+
+  // App auto-update
+  const {
+    state: appUpdateState,
+    checkForAppUpdate,
+    downloadAndInstall,
+    restartApp,
+  } = useAppUpdate();
 
   // Online/offline detection
   useEffect(() => {
@@ -514,6 +523,12 @@ function App() {
         </Alert>
       )}
 
+      <AppUpdateBanner
+        state={appUpdateState}
+        onDownload={downloadAndInstall}
+        onRestart={restartApp}
+      />
+
       {/* Update banner */}
       {updatesAvailable.length > 0 && !updatingAll && (
         <div className="flex items-center justify-between px-5 py-2 border-b border-[#c4a44a]/15 bg-gradient-to-r from-[#c4a44a]/[0.06] via-[#c4a44a]/[0.03] to-transparent backdrop-blur-sm animate-[slide-down_0.3s_ease-out]">
@@ -603,6 +618,7 @@ function App() {
           onShowBackups={() => setActiveDialog("backups")}
           onShowApiCompat={() => setActiveDialog("api-compat")}
           onShowCharacters={() => setActiveDialog("characters")}
+          onCheckForAppUpdate={() => checkForAppUpdate(false)}
         />
       )}
     </div>
