@@ -254,17 +254,18 @@ pub fn exchange_code(
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let params = [
-        ("grant_type", "authorization_code"),
-        ("code", code),
-        ("client_id", CLIENT_ID),
-        ("code_verifier", code_verifier),
-        ("redirect_uri", redirect_uri),
-    ];
+    let body = format!(
+        "grant_type=authorization_code&code={}&client_id={}&code_verifier={}&redirect_uri={}",
+        urlencoding::encode(code),
+        urlencoding::encode(CLIENT_ID),
+        urlencoding::encode(code_verifier),
+        urlencoding::encode(redirect_uri),
+    );
 
     let response = client
         .post(TOKEN_URL)
-        .form(&params)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
         .send()
         .map_err(|e| format!("Token exchange failed: {}", e))?;
 
@@ -288,15 +289,16 @@ pub fn refresh_token(refresh_token: &str) -> Result<TokenResponse, String> {
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let params = [
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_token),
-        ("client_id", CLIENT_ID),
-    ];
+    let body = format!(
+        "grant_type=refresh_token&refresh_token={}&client_id={}",
+        urlencoding::encode(refresh_token),
+        urlencoding::encode(CLIENT_ID),
+    );
 
     let response = client
         .post(TOKEN_URL)
-        .form(&params)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
         .send()
         .map_err(|e| format!("Token refresh failed: {}", e))?;
 
