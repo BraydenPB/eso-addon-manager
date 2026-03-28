@@ -1160,45 +1160,69 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
             </div>
 
             {/* Right: selected addons */}
-            <div className="w-[200px] shrink-0 overflow-y-auto border-l border-white/[0.06] pl-2">
+            <div className="w-[220px] shrink-0 overflow-y-auto border-l border-white/[0.06] pl-2">
               <SectionHeader className="mb-1.5 sticky top-0 bg-background/80 backdrop-blur-sm pb-1">
-                Selected
+                Selected ({addons.length})
               </SectionHeader>
               {addons.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground/40 text-center py-4">
-                  No addons yet
-                </p>
+                <div className="text-center py-6">
+                  <PackageIcon className="size-5 mx-auto text-muted-foreground/20 mb-1.5" />
+                  <p className="text-[11px] text-muted-foreground/40">Add addons from the left</p>
+                </div>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   {addons.map((addon) => (
                     <div
                       key={addon.esouiId}
                       className={cn(
-                        "flex items-center gap-1 p-1.5 rounded-lg",
-                        "border-l-2 bg-white/[0.02]",
-                        addon.required ? "border-l-[#c4a44a]/60" : "border-l-white/[0.08]"
+                        "group/item rounded-lg p-2 transition-all duration-150",
+                        "border border-white/[0.04] bg-white/[0.02]",
+                        "hover:bg-white/[0.04] hover:border-white/[0.08]"
                       )}
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium truncate">{addon.name}</p>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <p className="text-[11px] font-medium truncate flex-1">{addon.name}</p>
+                        <button
+                          onClick={() => handleRemoveAddon(addon.esouiId)}
+                          className="text-muted-foreground/20 hover:text-red-400 transition-colors p-0.5 opacity-0 group-hover/item:opacity-100"
+                          title="Remove"
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      </div>
+                      {/* Required / Optional toggle pill */}
+                      <div className="relative flex p-0.5 rounded-md bg-white/[0.03] border border-white/[0.06]">
+                        <div
+                          className={cn(
+                            "absolute top-0.5 bottom-0.5 rounded-[5px] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
+                            addon.required
+                              ? "left-0.5 w-[calc(50%-2px)] bg-[#c4a44a]/20 border border-[#c4a44a]/30"
+                              : "left-[calc(50%)] w-[calc(50%-2px)] bg-white/[0.06] border border-white/[0.08]"
+                          )}
+                        />
                         <button
                           onClick={() => handleToggleRequired(addon.esouiId)}
                           className={cn(
-                            "text-[9px] font-semibold transition-colors",
+                            "relative z-10 flex-1 text-[10px] font-semibold py-0.5 rounded-[5px] transition-colors duration-150 text-center",
                             addon.required
-                              ? "text-[#c4a44a]/70 hover:text-[#c4a44a]"
-                              : "text-muted-foreground/40 hover:text-muted-foreground"
+                              ? "text-[#c4a44a]"
+                              : "text-muted-foreground/40 hover:text-muted-foreground/60"
                           )}
                         >
-                          {addon.required ? "Required" : "Optional"}
+                          Required
+                        </button>
+                        <button
+                          onClick={() => handleToggleRequired(addon.esouiId)}
+                          className={cn(
+                            "relative z-10 flex-1 text-[10px] font-semibold py-0.5 rounded-[5px] transition-colors duration-150 text-center",
+                            !addon.required
+                              ? "text-foreground/70"
+                              : "text-muted-foreground/40 hover:text-muted-foreground/60"
+                          )}
+                        >
+                          Optional
                         </button>
                       </div>
-                      <button
-                        onClick={() => handleRemoveAddon(addon.esouiId)}
-                        className="text-muted-foreground/30 hover:text-red-400 transition-colors p-0.5"
-                      >
-                        <XIcon className="size-3" />
-                      </button>
                     </div>
                   ))}
                 </div>
