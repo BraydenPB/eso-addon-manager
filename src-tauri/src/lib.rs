@@ -138,6 +138,7 @@ pub fn run() {
             commands::scan_installed_addons,
             commands::resolve_esoui_addon,
             commands::search_esoui_addons,
+            commands::open_external_url,
             commands::fetch_esoui_detail,
             commands::install_addon,
             commands::remove_addon,

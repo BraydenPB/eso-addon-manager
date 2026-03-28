@@ -847,7 +847,7 @@ function PackCreateView({
 
   const [publishing, setPublishing] = useState(false);
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!title.trim()) {
       toast.error("Pack needs a title.");
       return;
@@ -871,22 +871,13 @@ function PackCreateView({
       const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
       const encoded = btoa(binary);
       const url = `https://eso-toolkit.github.io/pack-hub?prefill=${encodeURIComponent(encoded)}`;
-      // Use a hidden <a> click to trigger Tauri's external URL handler
-      // (window.open is blocked in Tauri webviews)
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      await invoke("open_external_url", { url });
       toast.success("Pack Hub opened in your browser — sign in to finish publishing.", {
         duration: 6000,
       });
     } catch (e) {
-      toast.error(`Failed to prepare pack data: ${e}`);
+      toast.error(`Failed to open browser: ${e}`);
     } finally {
-      // Brief delay so the button shows feedback before resetting
       setTimeout(() => setPublishing(false), 1500);
     }
   };
