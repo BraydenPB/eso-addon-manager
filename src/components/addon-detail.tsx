@@ -238,27 +238,41 @@ export function AddonDetail({
       {addon.dependsOn.length > 0 && (
         <div className="mb-5">
           <SectionHeader className="mb-2">Required Dependencies</SectionHeader>
-          <ul className="space-y-1">
+          <div className="space-y-0.5">
             {addon.dependsOn.map((dep) => {
               const installed = installedSet.has(dep.name);
               return (
-                <li key={dep.name} className="flex items-center gap-2 text-sm">
-                  <span className={installed ? "text-emerald-400" : "text-destructive"}>
-                    {installed ? "\u2713" : "\u2717"}
+                <div
+                  key={dep.name}
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-white/[0.03] transition-colors"
+                >
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
+                      installed
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "bg-red-500/15 text-red-400"
+                    )}
+                  >
+                    {installed ? "\u2713" : "!"}
                   </span>
-                  <span className="flex-1">{dep.name}</span>
-                  {dep.min_version !== null && (
-                    <span className="text-xs text-muted-foreground">&gt;={dep.min_version}</span>
-                  )}
+                  <div className="flex-1 min-w-0">
+                    <span className="truncate block">{dep.name}</span>
+                    {dep.min_version !== null && (
+                      <span className="text-[11px] text-muted-foreground/50">
+                        v{dep.min_version}+
+                      </span>
+                    )}
+                  </div>
                   {installed ? (
                     <button
-                      className="text-xs text-muted-foreground/40 hover:text-red-400 transition-colors disabled:opacity-50"
+                      className="shrink-0 rounded p-1 text-muted-foreground/30 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
                       onClick={() => handleRemoveDep(dep.name)}
                       disabled={removingDep === dep.name}
                       title={`Remove ${dep.name}`}
                     >
                       {removingDep === dep.name ? (
-                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-red-400" />
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/[0.1] border-t-red-400" />
                       ) : (
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -279,72 +293,63 @@ export function AddonDetail({
                     </button>
                   ) : (
                     <button
-                      className="flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-xs text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
+                      className="shrink-0 rounded bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                       onClick={() => handleInstallDep(dep.name)}
                       disabled={installingDep === dep.name}
                       title={`Install ${dep.name}`}
                     >
                       {installingDep === dep.name ? (
-                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-sky-400" />
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/[0.1] border-t-sky-400" />
                       ) : (
-                        <>
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" y1="15" x2="12" y2="3" />
-                          </svg>
-                          Install
-                        </>
+                        "Install"
                       )}
                     </button>
                   )}
-                </li>
+                </div>
               );
             })}
-          </ul>
+          </div>
         </div>
       )}
 
       {addon.optionalDependsOn.length > 0 && (
         <div className="mb-5">
           <SectionHeader className="mb-2">Optional Dependencies</SectionHeader>
-          <ul className="space-y-1">
+          <div className="space-y-0.5">
             {addon.optionalDependsOn.map((dep) => {
               const installed = installedSet.has(dep.name);
               return (
-                <li
+                <div
                   key={dep.name}
-                  className={cn(
-                    "flex items-center gap-2 text-sm",
-                    !installed && "italic text-muted-foreground"
-                  )}
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-white/[0.03] transition-colors"
                 >
-                  <span className={installed ? "text-emerald-400" : ""}>
-                    {installed ? "\u2713" : "\u25CB"}
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px]",
+                      installed
+                        ? "bg-emerald-500/15 text-emerald-400 font-bold"
+                        : "bg-white/[0.04] text-muted-foreground/40"
+                    )}
+                  >
+                    {installed ? "\u2713" : "\u2013"}
                   </span>
-                  <span className="flex-1">{dep.name}</span>
-                  {dep.min_version !== null && (
-                    <span className="text-xs text-muted-foreground">&gt;={dep.min_version}</span>
-                  )}
+                  <div className={cn("flex-1 min-w-0", !installed && "text-muted-foreground/60")}>
+                    <span className="truncate block">{dep.name}</span>
+                    {dep.min_version !== null && (
+                      <span className="text-[11px] text-muted-foreground/50">
+                        v{dep.min_version}+
+                      </span>
+                    )}
+                  </div>
                   {installed ? (
                     <button
-                      className="text-xs text-muted-foreground/40 hover:text-red-400 transition-colors disabled:opacity-50"
+                      className="shrink-0 rounded p-1 text-muted-foreground/30 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
                       onClick={() => handleRemoveDep(dep.name)}
                       disabled={removingDep === dep.name}
                       title={`Remove ${dep.name}`}
                     >
                       {removingDep === dep.name ? (
-                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-red-400" />
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/[0.1] border-t-red-400" />
                       ) : (
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -365,39 +370,22 @@ export function AddonDetail({
                     </button>
                   ) : (
                     <button
-                      className="flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-xs text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50 not-italic"
+                      className="shrink-0 rounded bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                       onClick={() => handleInstallDep(dep.name)}
                       disabled={installingDep === dep.name}
                       title={`Install ${dep.name}`}
                     >
                       {installingDep === dep.name ? (
-                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-sky-400" />
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/[0.1] border-t-sky-400" />
                       ) : (
-                        <>
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" y1="15" x2="12" y2="3" />
-                          </svg>
-                          Install
-                        </>
+                        "Install"
                       )}
                     </button>
                   )}
-                </li>
+                </div>
               );
             })}
-          </ul>
+          </div>
         </div>
       )}
 
