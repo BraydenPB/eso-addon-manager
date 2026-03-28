@@ -1,3 +1,4 @@
+mod auth;
 mod commands;
 mod esoui;
 mod installer;
@@ -52,6 +53,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AllowedAddonsPath(Mutex::new(None)))
+        .manage(auth::AuthState(Mutex::new(None)))
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Focus the existing window when a duplicate instance is launched
             if let Some(window) = app.get_webview_window("main") {
@@ -123,6 +125,19 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Load saved auth tokens from store
+            {
+                use tauri_plugin_store::StoreExt;
+                if let Ok(store) = app.store("settings.json") {
+                    if let Some(val) = store.get("auth_tokens") {
+                        if let Ok(tokens) = serde_json::from_value::<auth::AuthTokens>(val.clone())
+                        {
+                            *app.state::<auth::AuthState>().0.lock().unwrap() = Some(tokens);
+                        }
+                    }
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -166,6 +181,10 @@ pub fn run() {
             commands::migrate_from_minion,
             commands::list_packs,
             commands::get_pack,
+            commands::auth_login,
+            commands::auth_logout,
+            commands::auth_get_user,
+            commands::create_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

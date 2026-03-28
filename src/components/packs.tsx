@@ -8,6 +8,7 @@ import type {
   InstallResult,
   EsouiSearchResult,
   AddonManifest,
+  AuthUser,
 } from "../types";
 import {
   Dialog,
@@ -38,7 +39,6 @@ import {
   Loader2Icon,
   PlusIcon,
   XIcon,
-  ExternalLinkIcon,
   HeartIcon,
   CheckIcon,
   RefreshCwIcon,
@@ -50,6 +50,8 @@ import {
 interface PacksProps {
   addonsPath: string;
   installedAddons: AddonManifest[];
+  authUser: AuthUser | null;
+  onAuthChange: (user: AuthUser | null) => void;
   onClose: () => void;
   onRefresh: () => void;
   initialPackId?: string | null;
@@ -86,6 +88,8 @@ const PRESET_TAGS = ["trial", "pvp", "beginner", "healer", "tank", "dps", "utili
 export function Packs({
   addonsPath,
   installedAddons,
+  authUser,
+  onAuthChange,
   onClose,
   onRefresh,
   initialPackId,
@@ -330,6 +334,8 @@ export function Packs({
         ) : (
           <PackCreateView
             installedAddons={installedAddons}
+            authUser={authUser}
+            onAuthChange={onAuthChange}
             step={createStep}
             onStepChange={setCreateStep}
             title={createTitle}
@@ -342,6 +348,17 @@ export function Packs({
             onTagsChange={setCreateTags}
             addons={createAddons}
             onAddonsChange={setCreateAddons}
+            onPublished={() => {
+              // Reset form and switch to browse
+              setCreateTitle("");
+              setCreateDescription("");
+              setCreatePackType("addon-pack");
+              setCreateTags([]);
+              setCreateAddons([]);
+              setCreateStep("details");
+              setTab("browse");
+              loadPacks("", 1);
+            }}
           />
         )}
 
@@ -751,6 +768,8 @@ type AddonSource = "search" | "installed";
 
 interface CreateViewProps {
   installedAddons: AddonManifest[];
+  authUser: AuthUser | null;
+  onAuthChange: (user: AuthUser | null) => void;
   step: "details" | "addons";
   onStepChange: (s: "details" | "addons") => void;
   title: string;
@@ -763,10 +782,13 @@ interface CreateViewProps {
   onTagsChange: (v: string[]) => void;
   addons: PackAddonEntry[];
   onAddonsChange: (v: PackAddonEntry[] | ((prev: PackAddonEntry[]) => PackAddonEntry[])) => void;
+  onPublished: () => void;
 }
 
 function PackCreateView({
   installedAddons,
+  authUser,
+  onAuthChange,
   step,
   onStepChange: setStep,
   title,
@@ -779,6 +801,7 @@ function PackCreateView({
   onTagsChange: setSelectedTags,
   addons,
   onAddonsChange: setAddons,
+  onPublished,
 }: CreateViewProps) {
   // Search
   const [addonSource, setAddonSource] = useState<AddonSource>("search");
@@ -846,6 +869,31 @@ function PackCreateView({
   };
 
   const [publishing, setPublishing] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(false);
+
+  const handleLogin = async () => {
+    setLoggingIn(true);
+    try {
+      const user = await invoke<AuthUser>("auth_login");
+      onAuthChange(user);
+      toast.success(`Signed in as ${user.userName}`);
+    } catch (e) {
+      toast.error(`Sign in failed: ${e}`);
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await invoke("auth_logout");
+      onAuthChange(null);
+      toast.success("Signed out");
+    } catch (e) {
+      toast.error(`Sign out failed: ${e}`);
+    }
+  };
 
   const handlePublish = async () => {
     if (!title.trim()) {
@@ -858,27 +906,26 @@ function PackCreateView({
     }
     setPublishing(true);
     try {
-      const payload = {
-        title: title.trim(),
-        description: description.trim(),
-        pack_type: packType,
-        addons,
-        tags: selectedTags,
-      };
-      // Use TextEncoder to safely handle non-ASCII characters
-      const jsonStr = JSON.stringify(payload);
-      const bytes = new TextEncoder().encode(jsonStr);
-      const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
-      const encoded = btoa(binary);
-      const url = `https://eso-toolkit.github.io/pack-hub?prefill=${encodeURIComponent(encoded)}`;
-      await invoke("open_external_url", { url });
-      toast.success("Pack Hub opened in your browser — sign in to finish publishing.", {
-        duration: 6000,
+      await invoke<Pack>("create_pack", {
+        payload: {
+          title: title.trim(),
+          description: description.trim(),
+          packType: packType,
+          addons,
+          tags: selectedTags,
+          isAnonymous,
+        },
       });
+      toast.success("Pack published!");
+      onPublished();
     } catch (e) {
-      toast.error(`Failed to open browser: ${e}`);
+      const msg = String(e);
+      if (msg.includes("expired") || msg.includes("sign in")) {
+        onAuthChange(null);
+      }
+      toast.error(`Publish failed: ${msg}`);
     } finally {
-      setTimeout(() => setPublishing(false), 1500);
+      setPublishing(false);
     }
   };
 
@@ -894,8 +941,48 @@ function PackCreateView({
 
   const canProceed = !!title.trim();
 
+  // Auth gate — must be signed in to create packs
+  if (!authUser) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
+        <div className="rounded-xl bg-[#c4a44a]/[0.06] border border-[#c4a44a]/[0.1] p-5">
+          <PackageIcon className="size-10 text-[#c4a44a]/50" />
+        </div>
+        <div>
+          <p className="font-heading text-sm font-semibold">Sign in to create packs</p>
+          <p className="mt-1 text-xs text-muted-foreground/60 max-w-[260px]">
+            Sign in with your ESO Logs account to publish addon packs to the community.
+          </p>
+        </div>
+        <Button onClick={handleLogin} disabled={loggingIn} className="mt-1">
+          {loggingIn ? (
+            <>
+              <Loader2Icon className="size-4 animate-spin mr-1.5" />
+              Signing in...
+            </>
+          ) : (
+            "Sign in with ESO Logs"
+          )}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3 min-h-0">
+      {/* Signed-in header */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground/60">
+          Creating as <span className="text-[#c4a44a] font-semibold">{authUser.userName}</span>
+        </span>
+        <button
+          onClick={handleLogout}
+          className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        >
+          Sign out
+        </button>
+      </div>
+
       {step === "details" ? (
         /* ── Step 1: Pack Details ── */
         <div className="flex flex-col gap-3 overflow-y-auto max-h-[420px] px-3 -mx-3 pr-1">
@@ -1275,8 +1362,17 @@ function PackCreateView({
             </div>
           </div>
 
-          {/* Publish button */}
-          <div className="flex flex-col gap-1.5 mt-1">
+          {/* Anonymous toggle + Publish button */}
+          <div className="flex flex-col gap-2 mt-1">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground/60 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isAnonymous}
+                onChange={(e) => setIsAnonymous(e.target.checked)}
+                className="rounded border-white/20 bg-white/[0.03] accent-[#c4a44a]"
+              />
+              Publish anonymously
+            </label>
             <Button
               onClick={handlePublish}
               disabled={addons.length === 0 || publishing}
@@ -1285,18 +1381,12 @@ function PackCreateView({
               {publishing ? (
                 <>
                   <Loader2Icon className="size-4 animate-spin mr-1.5" />
-                  Opening browser...
+                  Publishing...
                 </>
               ) : (
-                <>
-                  <ExternalLinkIcon className="size-4 mr-1.5" />
-                  Publish to Pack Hub
-                </>
+                "Publish Pack"
               )}
             </Button>
-            <p className="text-[10px] text-muted-foreground/40 text-center">
-              Opens ESO Toolkit website to complete publishing
-            </p>
           </div>
         </div>
       )}

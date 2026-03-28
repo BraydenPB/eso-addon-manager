@@ -144,3 +144,18 @@ export interface PackPage {
   packs: Pack[];
   page: number;
 }
+
+// ── Auth types ────────────────────────────────────────────────────────────
+export interface AuthUser {
+  userId: string;
+  userName: string;
+}
+
+export interface CreatePackPayload {
+  title: string;
+  description: string;
+  packType: string;
+  addons: PackAddonEntry[];
+  tags: string[];
+  isAnonymous: boolean;
+}

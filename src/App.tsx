@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type {
   AddonManifest,
+  AuthUser,
   UpdateCheckResult,
   InstallResult,
   EsouiSearchResult,
@@ -51,6 +52,9 @@ function App() {
   const [updatingAll, setUpdatingAll] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+
+  // Auth
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
 
   // Deep link: pack ID to auto-open
   const [deepLinkPackId, setDeepLinkPackId] = useState<string | null>(null);
@@ -195,6 +199,14 @@ function App() {
       const savedFilter = await getSetting<FilterMode>("filterMode", "all");
       setSortMode(savedSort);
       setFilterMode(savedFilter);
+
+      // Restore auth session
+      try {
+        const user = await invoke<AuthUser | null>("auth_get_user");
+        setAuthUser(user ?? null);
+      } catch {
+        // Auth restore is non-critical
+      }
 
       const savedPath = await getSetting<string>("addonsPath", "");
       try {
@@ -625,6 +637,8 @@ function App() {
         <Packs
           addonsPath={addonsPath}
           installedAddons={addons}
+          authUser={authUser}
+          onAuthChange={setAuthUser}
           onClose={() => {
             setActiveDialog(null);
             setDeepLinkPackId(null);

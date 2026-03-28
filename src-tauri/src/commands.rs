@@ -1,3 +1,4 @@
+use crate::auth::{self, AuthState, AuthTokens, AuthUser};
 use crate::esoui::{self, EsouiAddonDetail, EsouiAddonInfo, EsouiCategory, EsouiSearchResult};
 use crate::installer;
 use crate::manifest::{self, AddonManifest};
@@ -1788,6 +1789,214 @@ pub async fn get_pack(id: String) -> Result<Pack, String> {
         let body: PackSingleResponse = response
             .json()
             .map_err(|e| format!("Failed to parse pack response: {}", e))?;
+
+        Ok(Pack::from_hub(body.pack))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+// ── Auth Helpers ─────────────────────────────────────────────────────────
+
+fn save_auth_tokens(app: &tauri::AppHandle, tokens: &AuthTokens) {
+    use tauri_plugin_store::StoreExt;
+    if let Ok(store) = app.store("settings.json") {
+        store.set(
+            "auth_tokens",
+            serde_json::to_value(tokens).unwrap_or_default(),
+        );
+    }
+}
+
+fn clear_auth_tokens(app: &tauri::AppHandle) {
+    use tauri_plugin_store::StoreExt;
+    if let Ok(store) = app.store("settings.json") {
+        let _ = store.delete("auth_tokens");
+    }
+}
+
+// ── Auth Commands ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn auth_login(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+) -> Result<AuthUser, String> {
+    let tokens = tokio::task::spawn_blocking(auth::login)
+        .await
+        .map_err(|e| format!("Task failed: {}", e))??;
+
+    let user = AuthUser {
+        user_id: tokens.user_id.clone(),
+        user_name: tokens.user_name.clone(),
+    };
+
+    // Save to store
+    save_auth_tokens(&app, &tokens);
+
+    // Update in-memory state
+    *state.0.lock().unwrap() = Some(tokens);
+
+    Ok(user)
+}
+
+#[tauri::command]
+pub async fn auth_logout(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    // Clear in-memory state
+    *state.0.lock().unwrap() = None;
+
+    // Clear from store
+    clear_auth_tokens(&app);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn auth_get_user(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+) -> Result<Option<AuthUser>, String> {
+    let tokens = {
+        let guard = state.0.lock().unwrap();
+        guard.clone()
+    };
+
+    let Some(tokens) = tokens else {
+        return Ok(None);
+    };
+
+    // Check if token needs refresh
+    match tokio::task::spawn_blocking({
+        let tokens = tokens.clone();
+        move || auth::ensure_valid_token(&tokens)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+    {
+        Ok(Some(new_tokens)) => {
+            // Tokens were refreshed — save them
+            let user = AuthUser {
+                user_id: new_tokens.user_id.clone(),
+                user_name: new_tokens.user_name.clone(),
+            };
+
+            save_auth_tokens(&app, &new_tokens);
+
+            *state.0.lock().unwrap() = Some(new_tokens);
+            Ok(Some(user))
+        }
+        Ok(None) => {
+            // Token still valid
+            Ok(Some(AuthUser {
+                user_id: tokens.user_id,
+                user_name: tokens.user_name,
+            }))
+        }
+        Err(_) => {
+            // Refresh failed — clear session
+            *state.0.lock().unwrap() = None;
+            clear_auth_tokens(&app);
+            Ok(None)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatePackPayload {
+    pub title: String,
+    pub description: String,
+    pub pack_type: String,
+    pub addons: Vec<PackAddonEntry>,
+    pub tags: Vec<String>,
+    pub is_anonymous: bool,
+}
+
+#[tauri::command]
+pub async fn create_pack(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+    payload: CreatePackPayload,
+) -> Result<Pack, String> {
+    // Get current access token (refresh if needed)
+    let access_token = {
+        let tokens = {
+            let guard = state.0.lock().unwrap();
+            guard.clone()
+        };
+
+        let Some(tokens) = tokens else {
+            return Err("Not signed in. Please sign in first.".to_string());
+        };
+
+        match tokio::task::spawn_blocking({
+            let tokens = tokens.clone();
+            move || auth::ensure_valid_token(&tokens)
+        })
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+        {
+            Ok(Some(new_tokens)) => {
+                let token = new_tokens.access_token.clone();
+                save_auth_tokens(&app, &new_tokens);
+                *state.0.lock().unwrap() = Some(new_tokens);
+                token
+            }
+            Ok(None) => tokens.access_token.clone(),
+            Err(e) => {
+                *state.0.lock().unwrap() = None;
+                return Err(e);
+            }
+        }
+    };
+
+    // POST to Pack Hub API
+    tokio::task::spawn_blocking(move || {
+        let client = pack_hub_client();
+        let base = pack_hub_url();
+        let url = format!("{}/packs", base);
+
+        let body = serde_json::json!({
+            "title": payload.title,
+            "description": payload.description,
+            "pack_type": payload.pack_type,
+            "addons": payload.addons,
+            "tags": payload.tags,
+            "is_anonymous": payload.is_anonymous,
+        });
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .map_err(|e| {
+                if e.is_connect() || e.is_timeout() {
+                    "Could not connect to Pack Hub. Check your internet connection.".to_string()
+                } else {
+                    format!("Network error: {}", e)
+                }
+            })?;
+
+        match response.status().as_u16() {
+            200 | 201 => {}
+            401 => return Err("Session expired. Please sign in again.".to_string()),
+            429 => {
+                return Err("Rate limit reached. Please wait before publishing again.".to_string())
+            }
+            status => {
+                let body = response.text().unwrap_or_default();
+                return Err(format!("Pack Hub returned HTTP {} — {}", status, body));
+            }
+        }
+
+        let body: PackSingleResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
 
         Ok(Pack::from_hub(body.pack))
     })

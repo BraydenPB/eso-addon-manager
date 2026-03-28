@@ -1033,12 +1033,15 @@ dependencies = [
 name = "eso-addon-manager"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "dirs",
+ "rand 0.8.5",
  "regex",
  "reqwest 0.12.28",
  "scraper",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
