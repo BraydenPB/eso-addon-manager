@@ -21,6 +21,13 @@ import { Input } from "@/components/ui/input";
 import { InfoPill } from "@/components/ui/info-pill";
 import { SectionHeader } from "@/components/ui/section-header";
 import { GlassPanel } from "@/components/ui/glass-panel";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   PackageIcon,
@@ -34,6 +41,8 @@ import {
   ExternalLinkIcon,
   HeartIcon,
   CheckIcon,
+  RefreshCwIcon,
+  SparklesIcon,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -257,18 +266,26 @@ export function Packs({
             {selectedPack ? selectedPack.title : "Pack Hub"}
           </DialogTitle>
 
-          {/* Tab bar (only when not viewing detail) */}
+          {/* Tab bar with animated pill indicator */}
           {!selectedPack && (
-            <div className="flex gap-1 mt-2 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div className="relative flex gap-1 mt-2 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+              {/* Sliding pill background */}
+              <div
+                className="absolute top-0.5 bottom-0.5 rounded-md bg-white/[0.08] shadow-sm transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                style={{
+                  left: tab === "browse" ? "2px" : "calc(50% + 0px)",
+                  width: "calc(50% - 2px)",
+                }}
+              />
               {(["browse", "create"] as TabMode[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={cn(
-                    "flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-200",
+                    "relative z-10 flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200",
                     tab === t
-                      ? "bg-white/[0.08] text-foreground shadow-sm"
-                      : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/[0.03]"
+                      ? "text-foreground"
+                      : "text-muted-foreground/60 hover:text-muted-foreground"
                   )}
                 >
                   {t === "browse" ? "Browse Packs" : "Create Pack"}
@@ -300,6 +317,7 @@ export function Packs({
             onTypeFilterChange={setTypeFilter}
             onSelectPack={handleSelectPack}
             onLoadMore={handleLoadMore}
+            onRetry={() => loadPacks(searchQuery, 1)}
           />
         ) : (
           <PackCreateView installedAddons={installedAddons} />
@@ -353,6 +371,7 @@ function PackListView({
   onTypeFilterChange,
   onSelectPack,
   onLoadMore,
+  onRetry,
 }: {
   packs: Pack[];
   loading: boolean;
@@ -365,13 +384,10 @@ function PackListView({
   onTypeFilterChange: (f: PackTypeFilter) => void;
   onSelectPack: (id: string) => void;
   onLoadMore: () => void;
+  onRetry: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3 overflow-hidden">
-      <p className="text-sm text-muted-foreground">
-        Community addon packs from the Pack Hub. Browse, install, or create your own.
-      </p>
-
       <div className="flex gap-2">
         <div className="relative flex-1">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/40" />
@@ -383,16 +399,20 @@ function PackListView({
             autoFocus
           />
         </div>
-        <select
+        <Select
           value={typeFilter}
-          onChange={(e) => onTypeFilterChange(e.target.value as PackTypeFilter)}
-          className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-sky-400/50"
+          onValueChange={(v) => v && onTypeFilterChange(v as PackTypeFilter)}
         >
-          <option value="all">All Types</option>
-          <option value="addon-pack">Addon Packs</option>
-          <option value="build-pack">Build Packs</option>
-          <option value="roster-pack">Roster Packs</option>
-        </select>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="addon-pack">Addon Packs</SelectItem>
+            <SelectItem value="build-pack">Build Packs</SelectItem>
+            <SelectItem value="roster-pack">Roster Packs</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-[400px]">
@@ -402,19 +422,28 @@ function PackListView({
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-            <div className="rounded-xl bg-white/[0.03] p-4">
+            <div className="rounded-xl bg-red-500/[0.06] border border-red-500/[0.1] p-4">
               <AlertCircleIcon className="size-8 text-red-400/60" />
             </div>
-            <p className="text-sm text-red-400">{error}</p>
+            <p className="font-heading text-sm font-medium text-red-400">Could not load packs</p>
+            <p className="text-xs text-muted-foreground/60 max-w-[280px]">{error}</p>
+            <Button variant="outline" size="sm" onClick={onRetry} className="mt-1">
+              <RefreshCwIcon className="size-3.5 mr-1.5" />
+              Retry
+            </Button>
           </div>
         ) : packs.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-            <div className="rounded-xl bg-white/[0.03] p-4">
-              <PackageIcon className="size-8 text-muted-foreground/40" />
+            <div className="rounded-xl bg-[#c4a44a]/[0.06] border border-[#c4a44a]/[0.1] p-4">
+              <SparklesIcon className="size-8 text-[#c4a44a]/50" />
             </div>
-            <p className="font-heading text-sm font-medium">No packs found</p>
-            <p className="text-xs text-muted-foreground/60">
-              {searchQuery ? "Try a different search term" : "Be the first to create a pack!"}
+            <p className="font-heading text-sm font-medium">
+              {searchQuery ? "No packs match your search" : "The Pack Hub is empty"}
+            </p>
+            <p className="text-xs text-muted-foreground/60 max-w-[260px]">
+              {searchQuery
+                ? "Try different keywords or clear filters"
+                : "Be the first to share an addon pack with the community!"}
             </p>
           </div>
         ) : (
@@ -423,15 +452,16 @@ function PackListView({
               key={pack.id}
               onClick={() => onSelectPack(pack.id)}
               className={cn(
-                "w-full text-left rounded-xl border border-white/[0.06] bg-white/[0.02] p-3",
-                "transition-all duration-200 hover:bg-white/[0.04] hover:border-white/[0.1]",
+                "group w-full text-left rounded-xl border border-white/[0.06] bg-white/[0.02] p-3",
+                "transition-all duration-200",
+                "hover:bg-white/[0.05] hover:border-white/[0.12] hover:-translate-y-[1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.2)]",
                 "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400/50"
               )}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-heading text-sm font-semibold truncate">
+                    <span className="font-heading text-sm font-semibold truncate group-hover:text-[#c4a44a] transition-colors duration-200">
                       {pack.title}
                     </span>
                     <InfoPill color="muted">{TYPE_LABELS[pack.packType] ?? pack.packType}</InfoPill>
@@ -835,7 +865,7 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
               onChange={(e) => setDescription(e.target.value)}
               maxLength={500}
               rows={3}
-              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none focus:ring-1 focus:ring-sky-400/50 resize-none"
+              className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 resize-none dark:bg-input/30 dark:hover:bg-input/50"
             />
             <div className="mt-1 flex items-center gap-2">
               <div className="flex-1 h-0.5 rounded bg-white/[0.04] overflow-hidden">
@@ -855,15 +885,16 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
             <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 mb-1 block">
               Pack Type
             </label>
-            <select
-              value={packType}
-              onChange={(e) => setPackType(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-sky-400/50"
-            >
-              <option value="addon-pack">Addon Pack</option>
-              <option value="build-pack">Build Pack</option>
-              <option value="roster-pack">Roster Pack</option>
-            </select>
+            <Select value={packType} onValueChange={(v) => v && setPackType(v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="addon-pack">Addon Pack</SelectItem>
+                <SelectItem value="build-pack">Build Pack</SelectItem>
+                <SelectItem value="roster-pack">Roster Pack</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Tags */}
@@ -930,17 +961,24 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
             )}
           </div>
 
-          {/* Source toggle */}
-          <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+          {/* Source toggle with animated pill */}
+          <div className="relative flex gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+            <div
+              className="absolute top-0.5 bottom-0.5 rounded-md bg-white/[0.08] shadow-sm transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+              style={{
+                left: addonSource === "search" ? "2px" : "calc(50% + 0px)",
+                width: "calc(50% - 2px)",
+              }}
+            />
             {(["search", "installed"] as AddonSource[]).map((src) => (
               <button
                 key={src}
                 onClick={() => setAddonSource(src)}
                 className={cn(
-                  "flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-200",
+                  "relative z-10 flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200",
                   addonSource === src
-                    ? "bg-white/[0.08] text-foreground shadow-sm"
-                    : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/[0.03]"
+                    ? "text-foreground"
+                    : "text-muted-foreground/60 hover:text-muted-foreground"
                 )}
               >
                 {src === "search" ? (
