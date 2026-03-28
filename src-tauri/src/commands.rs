@@ -353,13 +353,23 @@ pub async fn set_addon_tags(
     tokio::task::spawn_blocking(move || {
         let addons_dir = PathBuf::from(&addons_path);
         let mut store = metadata::load_metadata(&addons_dir);
-        if let Some(meta) = store.addons.get_mut(&folder_name) {
-            meta.tags = tags;
-            metadata::save_metadata(&addons_dir, &store)?;
-            Ok(())
-        } else {
-            Err(format!("No metadata entry for {}", folder_name))
+        match store.addons.get_mut(&folder_name) {
+            Some(meta) => meta.tags = tags,
+            None => {
+                // Create a minimal entry for untracked addons so tags can be saved
+                store.addons.insert(
+                    folder_name.clone(),
+                    metadata::AddonMetadata {
+                        esoui_id: 0,
+                        installed_version: String::new(),
+                        download_url: String::new(),
+                        installed_at: String::new(),
+                        tags,
+                    },
+                );
+            }
         }
+        metadata::save_metadata(&addons_dir, &store)
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
