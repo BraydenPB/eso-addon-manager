@@ -388,7 +388,7 @@ function PackListView({
 }) {
   return (
     <div className="flex flex-col gap-3 min-h-0">
-      <div className="flex gap-2 px-px">
+      <div className="flex gap-2">
         <div className="relative flex-1">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/40" />
           <Input
@@ -853,7 +853,7 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
     <div className="flex flex-col gap-3 min-h-0">
       {step === "details" ? (
         /* ── Step 1: Pack Details ── */
-        <div className="flex flex-col gap-3 overflow-y-auto max-h-[420px] px-px pr-1">
+        <div className="flex flex-col gap-3 overflow-y-auto max-h-[420px] px-3 -mx-3 pr-1">
           <p className="text-sm text-muted-foreground">
             Create an addon pack to share with the community. Search and add addons in the next
             step.
@@ -1027,7 +1027,7 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
           </div>
 
           {/* Search / Filter input */}
-          <div className="relative px-px">
+          <div className="relative">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/40" />
             {addonSource === "search" ? (
               <Input
