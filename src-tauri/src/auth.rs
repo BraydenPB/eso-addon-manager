@@ -1,7 +1,5 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::Rng;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
@@ -9,11 +7,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // ── Constants ────────────────────────────────────────────────────────────
 
-const CLIENT_ID: &str = "9fd28ffc-300a-44ce-8a0e-6167db47a7e1";
-const AUTH_URL: &str = "https://www.esologs.com/oauth/authorize";
-const TOKEN_URL: &str = "https://www.esologs.com/oauth/token";
+/// The website URL that handles the OAuth flow and passes tokens back.
+const APP_AUTH_URL: &str = "https://eso-toolkit.github.io/dev-previews/pr-925/app-auth";
+
 const USER_API: &str = "https://www.esologs.com/api/v2/user";
-const SCOPE: &str = "view-user-profile";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -36,8 +33,9 @@ pub struct AuthUser {
 
 pub struct AuthState(pub Mutex<Option<AuthTokens>>);
 
+/// Token data received from the website's OAuth proxy.
 #[derive(Debug, Deserialize)]
-pub(crate) struct TokenResponse {
+pub(crate) struct CallbackTokens {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: Option<i64>,
@@ -66,161 +64,9 @@ struct CurrentUser {
     name: String,
 }
 
-// ── PKCE ─────────────────────────────────────────────────────────────────
+// ── URL encoding (minimal, no external crate) ───────────────────────────
 
-fn generate_code_verifier() -> String {
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill(&mut bytes);
-    hex::encode(&bytes)
-}
-
-fn generate_code_challenge(verifier: &str) -> String {
-    let hash = Sha256::digest(verifier.as_bytes());
-    URL_SAFE_NO_PAD.encode(hash)
-}
-
-// hex encoding without external crate
-mod hex {
-    pub fn encode(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{:02x}", b)).collect()
-    }
-}
-
-// ── Localhost Callback Server ────────────────────────────────────────────
-
-/// Spawns a temporary localhost server, opens the browser for OAuth,
-/// waits for the callback with the authorization code, and returns it.
-pub fn run_oauth_flow() -> Result<(String, String, String), String> {
-    // Bind to random port
-    let listener =
-        TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind port: {}", e))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("Failed to get port: {}", e))?
-        .port();
-
-    let redirect_uri = format!("http://localhost:{}/callback", port);
-
-    // Generate PKCE
-    let code_verifier = generate_code_verifier();
-    let code_challenge = generate_code_challenge(&code_verifier);
-
-    // Build auth URL
-    let auth_url = format!(
-        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&code_challenge={}&code_challenge_method=S256",
-        AUTH_URL,
-        CLIENT_ID,
-        urlencoding::encode(&redirect_uri),
-        urlencoding::encode(SCOPE),
-        code_challenge,
-    );
-
-    // Open browser
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &auth_url])
-            .spawn()
-            .map_err(|e| format!("Failed to open browser: {}", e))?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&auth_url)
-            .spawn()
-            .map_err(|e| format!("Failed to open browser: {}", e))?;
-    }
-
-    // Wait for callback (120s timeout)
-    listener
-        .set_nonblocking(false)
-        .map_err(|e| format!("Failed to set blocking: {}", e))?;
-    let timeout = Duration::from_secs(120);
-    let start = std::time::Instant::now();
-
-    loop {
-        if start.elapsed() > timeout {
-            return Err("OAuth login timed out. Please try again.".to_string());
-        }
-
-        // Set a short accept timeout so we can check the overall timeout
-        listener
-            .set_nonblocking(true)
-            .map_err(|e| format!("Failed to set nonblocking: {}", e))?;
-
-        match listener.accept() {
-            Ok((mut stream, _)) => {
-                // Read the HTTP request
-                let mut buf = [0u8; 4096];
-                stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
-                let n = stream.read(&mut buf).unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..n]);
-
-                // Parse the code from the query string
-                if let Some(code) = extract_code_from_request(&request) {
-                    // Send success response
-                    let html = r#"<!DOCTYPE html><html><head><style>body{font-family:system-ui;background:#0b1220;color:#e5e7eb;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}div{text-align:center}h1{color:#c4a44a;font-size:1.5rem}p{opacity:0.6}</style></head><body><div><h1>Signed in!</h1><p>You can close this tab and return to ESO Addon Manager.</p></div></body></html>"#;
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        html.len(),
-                        html
-                    );
-                    let _ = stream.write_all(response.as_bytes());
-                    let _ = stream.flush();
-
-                    return Ok((code, code_verifier, redirect_uri));
-                } else {
-                    // Not the callback we're looking for, send a redirect
-                    let response =
-                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                    let _ = stream.write_all(response.as_bytes());
-                }
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(100));
-                continue;
-            }
-            Err(e) => {
-                return Err(format!("Server error: {}", e));
-            }
-        }
-    }
-}
-
-fn extract_code_from_request(request: &str) -> Option<String> {
-    // Parse "GET /callback?code=XXXX HTTP/1.1"
-    let first_line = request.lines().next()?;
-    let path = first_line.split_whitespace().nth(1)?;
-    if !path.starts_with("/callback") {
-        return None;
-    }
-    let query = path.split('?').nth(1)?;
-    for param in query.split('&') {
-        if let Some(value) = param.strip_prefix("code=") {
-            return Some(urlencoding::decode(value).ok()?.to_string());
-        }
-    }
-    None
-}
-
-// urlencoding without external crate
 mod urlencoding {
-    pub fn encode(s: &str) -> String {
-        let mut result = String::with_capacity(s.len() * 3);
-        for byte in s.bytes() {
-            match byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    result.push(byte as char);
-                }
-                _ => {
-                    result.push('%');
-                    result.push_str(&format!("{:02X}", byte));
-                }
-            }
-        }
-        result
-    }
-
     pub fn decode(s: &str) -> Result<String, ()> {
         let mut bytes = Vec::new();
         let mut chars = s.bytes();
@@ -242,73 +88,112 @@ mod urlencoding {
     }
 }
 
-// ── Token Exchange ───────────────────────────────────────────────────────
+// ── Localhost Callback Server ────────────────────────────────────────────
 
-pub fn exchange_code(
-    code: &str,
-    code_verifier: &str,
-    redirect_uri: &str,
-) -> Result<TokenResponse, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+/// Opens browser to the website's /app-auth page which handles the full
+/// OAuth flow, then redirects tokens back to our localhost server.
+///
+/// Flow:
+/// 1. Bind localhost server on random port
+/// 2. Open browser to website's /app-auth?port={port}
+/// 3. Website does PKCE OAuth with ESO Logs (using its registered redirect URI)
+/// 4. Website sends tokens to http://localhost:{port}/callback?tokens={base64}
+/// 5. We receive and decode the tokens
+pub fn run_oauth_flow() -> Result<CallbackTokens, String> {
+    // Bind to random port
+    let listener =
+        TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Failed to bind port: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get port: {}", e))?
+        .port();
 
-    let body = format!(
-        "grant_type=authorization_code&code={}&client_id={}&code_verifier={}&redirect_uri={}",
-        urlencoding::encode(code),
-        urlencoding::encode(CLIENT_ID),
-        urlencoding::encode(code_verifier),
-        urlencoding::encode(redirect_uri),
-    );
+    // Open browser to the website's app-auth page
+    let auth_url = format!("{}?port={}", APP_AUTH_URL, port);
 
-    let response = client
-        .post(TOKEN_URL)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .map_err(|e| format!("Token exchange failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-        return Err(format!(
-            "Token exchange returned HTTP {} — {}",
-            status, body
-        ));
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &auth_url])
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&auth_url)
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {}", e))?;
     }
 
-    response
-        .json::<TokenResponse>()
-        .map_err(|e| format!("Failed to parse token response: {}", e))
+    // Wait for callback (120s timeout)
+    let timeout = Duration::from_secs(120);
+    let start = std::time::Instant::now();
+
+    loop {
+        if start.elapsed() > timeout {
+            return Err("OAuth login timed out. Please try again.".to_string());
+        }
+
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| format!("Failed to set nonblocking: {}", e))?;
+
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let mut buf = [0u8; 8192];
+                stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]);
+
+                if let Some(tokens) = extract_tokens_from_request(&request) {
+                    // Send success page
+                    let html = r#"<!DOCTYPE html><html><head><style>body{font-family:system-ui;background:#0b1220;color:#e5e7eb;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}div{text-align:center}h1{color:#c4a44a;font-size:1.5rem}p{opacity:0.6}</style></head><body><div><h1>Signed in!</h1><p>You can close this tab and return to ESO Addon Manager.</p></div></body></html>"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+                        html.len(),
+                        html
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.flush();
+                    return Ok(tokens);
+                } else if request.contains("OPTIONS") {
+                    // Handle CORS preflight
+                    let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(response.as_bytes());
+                } else {
+                    let response =
+                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(e) => {
+                return Err(format!("Server error: {}", e));
+            }
+        }
+    }
 }
 
-pub fn refresh_token(refresh_token: &str) -> Result<TokenResponse, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    let body = format!(
-        "grant_type=refresh_token&refresh_token={}&client_id={}",
-        urlencoding::encode(refresh_token),
-        urlencoding::encode(CLIENT_ID),
-    );
-
-    let response = client
-        .post(TOKEN_URL)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .map_err(|e| format!("Token refresh failed: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err("Session expired. Please sign in again.".to_string());
+fn extract_tokens_from_request(request: &str) -> Option<CallbackTokens> {
+    let first_line = request.lines().next()?;
+    let path = first_line.split_whitespace().nth(1)?;
+    if !path.starts_with("/callback") {
+        return None;
     }
-
-    response
-        .json::<TokenResponse>()
-        .map_err(|e| format!("Failed to parse refresh response: {}", e))
+    let query = path.split('?').nth(1)?;
+    for param in query.split('&') {
+        if let Some(value) = param.strip_prefix("tokens=") {
+            let decoded_param = urlencoding::decode(value).ok()?;
+            let json_bytes = STANDARD.decode(decoded_param.as_bytes()).ok()?;
+            let tokens: CallbackTokens = serde_json::from_slice(&json_bytes).ok()?;
+            return Some(tokens);
+        }
+    }
+    None
 }
 
 // ── User Validation ──────────────────────────────────────────────────────
@@ -343,7 +228,6 @@ pub fn validate_token(access_token: &str) -> Result<(String, String), String> {
         .and_then(|u| u.current_user)
         .ok_or_else(|| "Could not retrieve user info".to_string())?;
 
-    // id can be a number or string
     let user_id = match &user.id {
         serde_json::Value::Number(n) => n.to_string(),
         serde_json::Value::String(s) => s.clone(),
@@ -356,8 +240,7 @@ pub fn validate_token(access_token: &str) -> Result<(String, String), String> {
 // ── Full Login Flow ──────────────────────────────────────────────────────
 
 pub fn login() -> Result<AuthTokens, String> {
-    let (code, verifier, redirect_uri) = run_oauth_flow()?;
-    let token_resp = exchange_code(&code, &verifier, &redirect_uri)?;
+    let token_resp = run_oauth_flow()?;
     let (user_id, user_name) = validate_token(&token_resp.access_token)?;
 
     let now = SystemTime::now()
@@ -388,12 +271,12 @@ pub fn ensure_valid_token(tokens: &AuthTokens) -> Result<Option<AuthTokens>, Str
         return Ok(None);
     }
 
-    // Try refresh
+    // Try refresh via the website's token endpoint
     if tokens.refresh_token.is_empty() {
         return Err("Session expired. Please sign in again.".to_string());
     }
 
-    let token_resp = refresh_token(&tokens.refresh_token)?;
+    let token_resp = refresh_token_request(&tokens.refresh_token)?;
     let (user_id, user_name) = validate_token(&token_resp.access_token)?;
 
     let expires_at = now + token_resp.expires_in.unwrap_or(3600);
@@ -407,4 +290,33 @@ pub fn ensure_valid_token(tokens: &AuthTokens) -> Result<Option<AuthTokens>, Str
         user_id,
         user_name,
     }))
+}
+
+/// Token refresh — this calls ESO Logs directly since refresh doesn't
+/// require a registered redirect_uri.
+fn refresh_token_request(refresh_token: &str) -> Result<CallbackTokens, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let params = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+        ("client_id", "9fd28ffc-300a-44ce-8a0e-6167db47a7e1"),
+    ];
+
+    let response = client
+        .post("https://www.esologs.com/oauth/token")
+        .form(&params)
+        .send()
+        .map_err(|e| format!("Token refresh failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err("Session expired. Please sign in again.".to_string());
+    }
+
+    response
+        .json::<CallbackTokens>()
+        .map_err(|e| format!("Failed to parse refresh response: {}", e))
 }
