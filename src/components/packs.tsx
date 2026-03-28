@@ -871,7 +871,15 @@ function PackCreateView({
       const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
       const encoded = btoa(binary);
       const url = `https://eso-toolkit.github.io/pack-hub?prefill=${encodeURIComponent(encoded)}`;
-      window.open(url, "_blank");
+      // Use a hidden <a> click to trigger Tauri's external URL handler
+      // (window.open is blocked in Tauri webviews)
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       toast.success("Pack Hub opened in your browser — sign in to finish publishing.", {
         duration: 6000,
       });
