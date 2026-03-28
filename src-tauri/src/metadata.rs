@@ -14,6 +14,9 @@ pub struct AddonMetadata {
     pub installed_at: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Last-updated date string from ESOUI (e.g. "03/26/26 10:30 AM")
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub esoui_updated: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,12 +165,28 @@ pub fn record_install(
     version: &str,
     download_url: &str,
 ) {
+    record_install_with_updated(store, folder_name, esoui_id, version, download_url, "");
+}
+
+pub fn record_install_with_updated(
+    store: &mut MetadataStore,
+    folder_name: &str,
+    esoui_id: u32,
+    version: &str,
+    download_url: &str,
+    esoui_updated: &str,
+) {
+    let existing = store.addons.get(folder_name);
     // Preserve existing tags when re-recording an install (e.g. update)
-    let existing_tags = store
-        .addons
-        .get(folder_name)
-        .map(|m| m.tags.clone())
-        .unwrap_or_default();
+    let existing_tags = existing.map(|m| m.tags.clone()).unwrap_or_default();
+    // Keep existing esoui_updated if new one is empty
+    let updated = if esoui_updated.is_empty() {
+        existing
+            .map(|m| m.esoui_updated.clone())
+            .unwrap_or_default()
+    } else {
+        esoui_updated.to_string()
+    };
     store.addons.insert(
         folder_name.to_string(),
         AddonMetadata {
@@ -181,8 +200,100 @@ pub fn record_install(
                     .as_secs(),
             ),
             tags: existing_tags,
+            esoui_updated: updated,
         },
     );
+}
+
+/// Parse an ESOUI date string (e.g. "03/26/26 10:30 AM") into days since epoch.
+/// Returns None if the format is unrecognized.
+pub fn parse_esoui_date_to_days(date_str: &str) -> Option<u64> {
+    // ESOUI uses "MM/DD/YY HH:MM AM/PM" format
+    let parts: Vec<&str> = date_str.split_whitespace().collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let date_parts: Vec<&str> = parts[0].split('/').collect();
+    if date_parts.len() != 3 {
+        return None;
+    }
+    let month: u64 = date_parts[0].parse().ok()?;
+    let day: u64 = date_parts[1].parse().ok()?;
+    let mut year: u64 = date_parts[2].parse().ok()?;
+    // 2-digit year: 00-99 -> 2000-2099
+    if year < 100 {
+        year += 2000;
+    }
+    // Approximate days since epoch (good enough for staleness checks)
+    Some(year * 365 + year / 4 - year / 100 + year / 400 + month * 30 + day)
+}
+
+/// Compute days since an ESOUI date string relative to today.
+pub fn days_since_esoui_date(date_str: &str) -> Option<u64> {
+    let date_days = parse_esoui_date_to_days(date_str)?;
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let now_date = now_secs / 86400; // days since epoch
+
+    // Convert "approximate year days" to actual epoch days for comparison
+    // Instead, let's compute today in the same approximate scheme
+    let now_days = {
+        let total_days = now_date;
+        // Reverse: compute year/month/day from epoch days
+        let mut y = 1970u64;
+        let mut d = total_days;
+        loop {
+            let year_days =
+                if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) {
+                    366
+                } else {
+                    365
+                };
+            if d < year_days {
+                break;
+            }
+            d -= year_days;
+            y += 1;
+        }
+        let leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
+        let month_days = [
+            31,
+            if leap { 29 } else { 28 },
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ];
+        let mut m = 1u64;
+        for &md in &month_days {
+            if d < md {
+                break;
+            }
+            d -= md;
+            m += 1;
+        }
+        y * 365 + y / 4 - y / 100 + y / 400 + m * 30 + (d + 1)
+    };
+
+    now_days.checked_sub(date_days)
+}
+
+/// Health status based on how recently the addon was updated on ESOUI.
+pub fn compute_health_status(esoui_updated: &str) -> String {
+    match days_since_esoui_date(esoui_updated) {
+        Some(days) if days > 365 => "very_stale".to_string(),
+        Some(days) if days > 90 => "stale".to_string(),
+        Some(_) => "healthy".to_string(),
+        None => "unknown".to_string(),
+    }
 }
 
 pub fn remove_entry(store: &mut MetadataStore, folder_name: &str) {

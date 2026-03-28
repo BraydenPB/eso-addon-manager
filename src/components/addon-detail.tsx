@@ -176,6 +176,10 @@ export function AddonDetail({
             </InfoPill>
           </a>
         )}
+        {addon.healthStatus === "stale" && <InfoPill color="amber">Stale (&gt;90d)</InfoPill>}
+        {addon.healthStatus === "very_stale" && (
+          <InfoPill color="red">Very Stale (&gt;1y)</InfoPill>
+        )}
       </div>
 
       {updateResult?.hasUpdate && (
@@ -230,7 +234,62 @@ export function AddonDetail({
               <InfoPill color="gold">Addon</InfoPill>
             )}
           </dd>
+          {addon.esouiUpdated && (
+            <>
+              <dt className="text-muted-foreground/60 font-heading text-xs uppercase tracking-wider">
+                Last Updated
+              </dt>
+              <dd className="flex items-center gap-2">
+                <span>{addon.esouiUpdated}</span>
+                {addon.healthStatus === "healthy" && (
+                  <span
+                    className="inline-block h-2 w-2 rounded-full bg-emerald-400"
+                    title="Recently updated"
+                  />
+                )}
+                {addon.healthStatus === "stale" && (
+                  <span
+                    className="inline-block h-2 w-2 rounded-full bg-amber-400"
+                    title="Not updated in 90+ days"
+                  />
+                )}
+                {addon.healthStatus === "very_stale" && (
+                  <span
+                    className="inline-block h-2 w-2 rounded-full bg-red-400"
+                    title="Not updated in 1+ year"
+                  />
+                )}
+              </dd>
+            </>
+          )}
         </dl>
+        {addon.esouiId && (
+          <div className="mt-3 pt-3 border-t border-white/[0.06]">
+            <a
+              href={`https://www.esoui.com/downloads/info${addon.esouiId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+              View on ESOUI
+            </a>
+          </div>
+        )}
       </GlassPanel>
 
       {/* Tags */}

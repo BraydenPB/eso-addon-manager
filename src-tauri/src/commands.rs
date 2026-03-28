@@ -137,6 +137,7 @@ fn determine_primary_folder(installed_folders: &[String], esoui_title: &str) -> 
 /// Record metadata for a set of installed folders. The primary folder gets
 /// the esoui_id and version from ESOUI; secondary folders get id 0 and
 /// their local manifest version.
+#[allow(clippy::too_many_arguments)]
 fn record_installed_folders(
     store: &mut metadata::MetadataStore,
     addons_dir: &Path,
@@ -145,6 +146,7 @@ fn record_installed_folders(
     esoui_version: &str,
     esoui_title: &str,
     download_url: &str,
+    esoui_updated: &str,
 ) {
     let primary = determine_primary_folder(installed_folders, esoui_title);
     for folder in installed_folders {
@@ -154,12 +156,13 @@ fn record_installed_folders(
         } else {
             read_local_version(addons_dir, folder)
         };
-        metadata::record_install(
+        metadata::record_install_with_updated(
             store,
             folder,
             if is_primary { esoui_id } else { 0 },
             &version,
             download_url,
+            if is_primary { esoui_updated } else { "" },
         );
     }
 }
@@ -336,6 +339,8 @@ fn scan_installed_addons_blocking(addons_path: &str) -> Result<Vec<AddonManifest
         if let Some(meta) = store.addons.get(&addon.folder_name) {
             addon.esoui_id = Some(meta.esoui_id);
             addon.tags = meta.tags.clone();
+            addon.esoui_updated = meta.esoui_updated.clone();
+            addon.health_status = metadata::compute_health_status(&meta.esoui_updated);
         }
     }
 
@@ -365,6 +370,7 @@ pub async fn set_addon_tags(
                         download_url: String::new(),
                         installed_at: String::new(),
                         tags,
+                        esoui_updated: String::new(),
                     },
                 );
             }
@@ -426,6 +432,7 @@ pub fn install_addon(
         &esoui_version,
         &esoui_title,
         &download_url,
+        "", // esoui_updated will be populated during next update check
     );
 
     let mut all_installed: HashSet<String> = HashSet::new();
@@ -577,12 +584,14 @@ fn check_for_updates_blocking(addons_path: &str) -> Result<Vec<UpdateCheckResult
                 let has_update =
                     !remote_ver.is_empty() && !local_ver.is_empty() && remote_ver != local_ver;
 
-                // Sync stored version to ESOUI format so future comparisons
-                // don't flag false updates due to format differences
-                // (e.g. local manifest "2.4.10" vs ESOUI "2.4.10" with different source).
-                if !has_update && meta.installed_version != info.version {
-                    if let Some(entry) = store.addons.get_mut(folder_name) {
+                // Sync stored version and ESOUI updated date
+                if let Some(entry) = store.addons.get_mut(folder_name) {
+                    if !has_update && meta.installed_version != info.version {
                         entry.installed_version = info.version.clone();
+                        metadata_changed = true;
+                    }
+                    if !info.updated.is_empty() && entry.esoui_updated != info.updated {
+                        entry.esoui_updated = info.updated.clone();
                         metadata_changed = true;
                     }
                 }
@@ -654,6 +663,7 @@ pub fn update_addon(
         &info.version,
         &info.title,
         &info.download_url,
+        &info.updated,
     );
     metadata::save_metadata(&addons_dir, &store)?;
 
@@ -778,12 +788,13 @@ fn auto_link_addons_blocking(addons_path: &str) -> Result<AutoLinkResult, String
             Ok(Some(esoui_id)) => {
                 // Verify by fetching info — title should roughly match
                 if let Ok(info) = esoui::fetch_addon_info(esoui_id) {
-                    metadata::record_install(
+                    metadata::record_install_with_updated(
                         &mut store,
                         folder_name,
                         esoui_id,
                         version,
                         &info.download_url,
+                        &info.updated,
                     );
                     linked.push(folder_name.clone());
                 } else {
@@ -860,6 +871,7 @@ pub fn import_addon_list(
                             &info.version,
                             &info.title,
                             &info.download_url,
+                            &info.updated,
                         );
                         installed.push(entry.folder_name.clone());
                     }

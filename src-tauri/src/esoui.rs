@@ -60,6 +60,7 @@ pub struct EsouiAddonInfo {
     pub title: String,
     pub version: String,
     pub download_url: String,
+    pub updated: String,
 }
 
 pub fn parse_esoui_input(input: &str) -> Result<u32, String> {
@@ -163,6 +164,10 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
         .unwrap_or_else(|| format!("Addon #{}", id));
 
     let version = extract_version(&document);
+
+    // Extract "Updated" date from the info page table (same page, no extra request)
+    let updated = extract_table_field(&document, "Updated");
+
     let download_url = fetch_download_url(client, id)?;
 
     Ok(EsouiAddonInfo {
@@ -170,7 +175,25 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
         title,
         version,
         download_url,
+        updated,
     })
+}
+
+/// Extract a single field value from the ESOUI info page metadata table.
+fn extract_table_field(document: &Html, field_name: &str) -> String {
+    let tr_sel = Selector::parse("tr").unwrap();
+    let td_sel = Selector::parse("td").unwrap();
+    for tr in document.select(&tr_sel) {
+        let tds: Vec<_> = tr.select(&td_sel).collect();
+        if tds.len() >= 2 {
+            let label = tds[0].text().collect::<String>();
+            let label = label.trim().trim_end_matches(':');
+            if label == field_name {
+                return tds[1].text().collect::<String>().trim().to_string();
+            }
+        }
+    }
+    String::new()
 }
 
 #[derive(Debug, Clone, Serialize)]
