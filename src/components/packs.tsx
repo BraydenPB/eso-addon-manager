@@ -593,10 +593,13 @@ function PackDetailView({
         </div>
       )}
 
-      {/* Required addons */}
+      {/* Required addons — always installed */}
       {requiredAddons.length > 0 && (
         <div>
-          <SectionHeader className="mb-2">Required Addons</SectionHeader>
+          <div className="flex items-center justify-between mb-2">
+            <SectionHeader>Required</SectionHeader>
+            <span className="text-[10px] text-[#c4a44a]/60 font-medium">Always included</span>
+          </div>
           <div className="space-y-1">
             {requiredAddons.map((addon) => (
               <AddonRow
@@ -611,15 +614,13 @@ function PackDetailView({
         </div>
       )}
 
-      {/* Optional addons */}
+      {/* Optional addons — toggle to include */}
       {optionalAddons.length > 0 && (
         <div>
-          <SectionHeader className="mb-2">
-            Optional Addons
-            <span className="text-muted-foreground/40 font-normal ml-1.5 normal-case tracking-normal">
-              — click to include
-            </span>
-          </SectionHeader>
+          <div className="flex items-center justify-between mb-2">
+            <SectionHeader>Optional</SectionHeader>
+            <span className="text-[10px] text-sky-400/60 font-medium">Click to add</span>
+          </div>
           <div className="space-y-1">
             {optionalAddons.map((addon) => (
               <AddonRow
@@ -649,37 +650,66 @@ function AddonRow({
   onToggle: () => void;
 }) {
   return (
-    <button onClick={onToggle} disabled={locked} className="w-full text-left">
+    <button
+      onClick={onToggle}
+      disabled={locked}
+      className={cn(
+        "group w-full text-left rounded-lg transition-all duration-150",
+        !locked && "cursor-pointer",
+        // Unchecked optional: prominent interactive appearance
+        !locked && !checked && "hover:bg-sky-400/[0.06] hover:ring-1 hover:ring-sky-400/20",
+        // Checked: gold tint
+        !locked && checked && "hover:bg-[#c4a44a]/[0.06]"
+      )}
+    >
       <GlassPanel
         variant="subtle"
         className={cn(
-          "flex items-center gap-3 p-2.5 transition-all duration-150",
+          "flex items-center gap-3 p-2.5 transition-all duration-150 rounded-lg",
           "border-l-[3px]",
-          checked ? "border-l-[#c4a44a]/60" : "border-l-white/[0.08]",
-          !locked && "cursor-pointer hover:bg-white/[0.04]"
+          locked
+            ? "border-l-[#c4a44a]/60"
+            : checked
+              ? "border-l-[#c4a44a]/60 bg-[#c4a44a]/[0.03]"
+              : "border-l-sky-400/30"
         )}
       >
-        {/* Checkbox */}
+        {/* Checkbox — larger, more visible */}
         <div
           className={cn(
-            "flex items-center justify-center size-4 rounded border shrink-0 transition-all duration-150",
-            checked ? "bg-[#c4a44a]/20 border-[#c4a44a]/50" : "border-white/[0.12] bg-white/[0.02]",
-            locked && "opacity-60"
+            "flex items-center justify-center size-5 rounded-md border-2 shrink-0 transition-all duration-150",
+            locked
+              ? "bg-[#c4a44a]/15 border-[#c4a44a]/40"
+              : checked
+                ? "bg-[#c4a44a]/20 border-[#c4a44a]/50 shadow-[0_0_6px_rgba(196,164,74,0.15)]"
+                : "border-white/20 bg-white/[0.03] group-hover:border-sky-400/40 group-hover:bg-sky-400/[0.06]"
           )}
         >
-          {checked && <CheckIcon className="size-3 text-[#c4a44a]" />}
+          {checked && <CheckIcon className="size-3.5 text-[#c4a44a]" />}
+          {locked && <CheckIcon className="size-3.5 text-[#c4a44a]/70" />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span
               className={cn(
-                "text-sm font-medium truncate",
-                !checked && !addon.required && "text-muted-foreground/60"
+                "text-sm font-medium truncate transition-colors duration-150",
+                locked
+                  ? "text-foreground"
+                  : checked
+                    ? "text-foreground"
+                    : "text-muted-foreground group-hover:text-foreground"
               )}
             >
               {addon.name}
             </span>
-            {addon.required && <InfoPill color="gold">Required</InfoPill>}
+            {locked && (
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-[#c4a44a]/50 shrink-0">
+                Required
+              </span>
+            )}
+            {!locked && !checked && (
+              <PlusIcon className="size-3.5 text-sky-400/0 group-hover:text-sky-400/60 transition-all duration-150 shrink-0" />
+            )}
           </div>
           {addon.note && (
             <p className="mt-0.5 text-xs text-muted-foreground/60 truncate">{addon.note}</p>
