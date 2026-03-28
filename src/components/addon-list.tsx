@@ -279,51 +279,54 @@ export function AddonList({
                       onToggleSelect(addon.folderName);
                     }}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-start gap-2">
                       {batchMode && (
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={() => onToggleSelect(addon.folderName)}
                           onClick={(e) => e.stopPropagation()}
-                          className="shrink-0"
+                          className="shrink-0 mt-0.5"
                         />
                       )}
-                      <span className="flex-1 truncate text-sm font-medium">{addon.title}</span>
-                      {updatesMap.has(addon.folderName) && (
-                        <Badge
-                          variant="outline"
-                          className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
-                        >
-                          Update
-                        </Badge>
-                      )}
-                      {addon.isLibrary && (
-                        <Badge
-                          variant="outline"
-                          className="border-emerald-400/20 bg-emerald-400/[0.04] text-emerald-400 text-[10px]"
-                        >
-                          LIB
-                        </Badge>
-                      )}
-                      {addon.missingDependencies.length > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
-                        >
-                          {addon.missingDependencies.length} missing
-                        </Badge>
-                      )}
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {addon.version || `v${addon.addonVersion ?? "?"}`}
-                      </span>
-                    </div>
-                    {addon.author && (
-                      <div
-                        className={cn("mt-0.5 text-xs text-muted-foreground", batchMode && "ml-7")}
-                      >
-                        by {addon.author}
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-sm font-medium">{addon.title}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground/50">
+                            {addon.version || `v${addon.addonVersion ?? "?"}`}
+                          </span>
+                          {addon.author && (
+                            <span className="text-xs text-muted-foreground/40">
+                              &middot; {addon.author}
+                            </span>
+                          )}
+                          <div className="flex-1" />
+                          {updatesMap.has(addon.folderName) && (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
+                            >
+                              Update
+                            </Badge>
+                          )}
+                          {addon.isLibrary && (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-400/20 bg-emerald-400/[0.04] text-emerald-400 text-[10px]"
+                            >
+                              LIB
+                            </Badge>
+                          )}
+                          {addon.missingDependencies.length > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
+                            >
+                              {addon.missingDependencies.length} missing
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 );
               })
