@@ -35,7 +35,7 @@ pub struct AddonManifest {
     pub missing_dependencies: Vec<String>,
     pub esoui_id: Option<u32>,
     pub tags: Vec<String>,
-    pub esoui_updated: String,
+    pub esoui_last_update: u64,
     pub health_status: String,
 }
 
@@ -165,7 +165,7 @@ pub fn parse_manifest(folder_name: &str, manifest_path: &Path) -> Option<AddonMa
         missing_dependencies: Vec::new(),
         esoui_id: None,
         tags: Vec::new(),
-        esoui_updated: String::new(),
+        esoui_last_update: 0,
         health_status: "unknown".to_string(),
     })
 }

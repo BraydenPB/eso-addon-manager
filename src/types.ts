@@ -17,7 +17,7 @@ export interface AddonManifest {
   missingDependencies: string[];
   esouiId: number | null;
   tags: string[];
-  esouiUpdated: string;
+  esouiLastUpdate: number;
   healthStatus: "healthy" | "stale" | "very_stale" | "unknown";
 }
 

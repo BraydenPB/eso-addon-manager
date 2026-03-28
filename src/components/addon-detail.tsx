@@ -234,13 +234,13 @@ export function AddonDetail({
               <InfoPill color="gold">Addon</InfoPill>
             )}
           </dd>
-          {addon.esouiUpdated && (
+          {addon.esouiLastUpdate > 0 && (
             <>
               <dt className="text-muted-foreground/60 font-heading text-xs uppercase tracking-wider">
                 Last Updated
               </dt>
               <dd className="flex items-center gap-2">
-                <span>{addon.esouiUpdated}</span>
+                <span>{new Date(addon.esouiLastUpdate).toLocaleDateString()}</span>
                 {addon.healthStatus === "healthy" && (
                   <span
                     className="inline-block h-2 w-2 rounded-full bg-emerald-400"
