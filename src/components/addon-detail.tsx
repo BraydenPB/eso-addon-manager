@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import type { AddonManifest, UpdateCheckResult, InstallResult } from "../types";
 import { PRESET_TAGS } from "../types";
@@ -241,10 +242,8 @@ export function AddonDetail({
         </dl>
         {addon.esouiId && (
           <div className="mt-3 pt-3 border-t border-white/[0.06]">
-            <a
-              href={`https://www.esoui.com/downloads/info${addon.esouiId}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openUrl(`https://www.esoui.com/downloads/info${addon.esouiId}`)}
               className="inline-flex items-center gap-1.5 rounded-md bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors"
             >
               <svg
@@ -263,7 +262,7 @@ export function AddonDetail({
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
               View on ESOUI
-            </a>
+            </button>
           </div>
         )}
       </GlassPanel>
