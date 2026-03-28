@@ -116,58 +116,31 @@ export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-
 export type ViewMode = "installed" | "discover";
 export type DiscoverTab = "search" | "categories" | "url";
 
-// ── Pack types (from packs worker API) ─────────────────────────────
+// ── Pack types (from roster-hub-api Pack Hub) ─────────────────────────────
 export interface PackAddonEntry {
   esouiId: number;
   name: string;
   required: boolean;
-  defaultEnabled: boolean;
   note?: string;
-}
-
-export interface BuildReference {
-  buildHubId: string;
-  title: string;
-  esoClass?: string;
-  role?: string;
-}
-
-export interface RosterReference {
-  rosterHubId: string;
-  title: string;
-  trialId?: string;
-}
-
-export interface PackMetadata {
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  originUrl?: string;
-  version: number;
 }
 
 export type PackType = "addon-pack" | "build-pack" | "roster-pack";
 
 export interface Pack {
   id: string;
-  name: string;
+  title: string;
   description: string;
-  type: PackType;
+  packType: string;
+  authorName: string;
+  isAnonymous: boolean;
+  voteCount: number;
   tags: string[];
-  metadata: PackMetadata;
   addons: PackAddonEntry[];
-  builds?: BuildReference[];
-  rosters?: RosterReference[];
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface PackIndexItem {
-  id: string;
-  name: string;
-  description: string;
-  type: PackType;
-  tags: string[];
-  addonCount: number;
-  buildCount: number;
-  rosterCount: number;
-  updatedAt: string;
+export interface PackPage {
+  packs: Pack[];
+  page: number;
 }

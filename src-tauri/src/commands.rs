@@ -355,11 +355,13 @@ pub fn fetch_esoui_detail(esoui_id: u32) -> Result<EsouiAddonDetail, String> {
 }
 
 #[tauri::command]
-pub fn search_esoui_addons(query: String) -> Result<Vec<EsouiSearchResult>, String> {
+pub async fn search_esoui_addons(query: String) -> Result<Vec<EsouiSearchResult>, String> {
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
-    esoui::search_esoui(&query)
+    tokio::task::spawn_blocking(move || esoui::search_esoui(&query))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -1543,97 +1545,145 @@ pub fn migrate_from_minion(addons_path: String) -> Result<MinionMigrationResult,
     })
 }
 
-// ── Pack API ───────────────────────────────────────────────────────────────
+// ── Pack Hub API (roster-hub-api) ──────────────────────────────────────────
 
-/// Base URL for the packs worker. Falls back to local dev.
-fn packs_api_url() -> &'static str {
+/// Base URL for the Pack Hub (shared with the website).
+fn pack_hub_url() -> &'static str {
     static URL: OnceLock<String> = OnceLock::new();
     URL.get_or_init(|| {
-        std::env::var("ESO_PACKS_API_URL").unwrap_or_else(|_| "http://127.0.0.1:8787".to_string())
+        std::env::var("PACK_HUB_API_URL")
+            .unwrap_or_else(|_| "https://roster-hub-api.eso-toolkit.workers.dev".to_string())
     })
 }
 
-fn packs_client() -> &'static reqwest::blocking::Client {
+fn pack_hub_client() -> &'static reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
             .user_agent(format!("ESOAddonManager/{}", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(15))
             .build()
-            .expect("failed to build packs HTTP client")
+            .expect("failed to build pack hub HTTP client")
     })
 }
+
+// ── Pack structs (matching roster-hub-api response) ───────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackAddonEntry {
     pub esoui_id: u32,
     pub name: String,
+    #[serde(default = "default_true")]
     pub required: bool,
-    pub default_enabled: bool,
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BuildReference {
-    pub build_hub_id: String,
-    pub title: String,
-    pub eso_class: Option<String>,
-    pub role: Option<String>,
+fn default_true() -> bool {
+    true
 }
 
+/// Full pack object returned by the roster-hub-api.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RosterReference {
-    pub roster_hub_id: String,
+#[serde(rename_all = "snake_case")]
+pub struct HubPack {
+    pub id: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub is_anonymous: bool,
     pub title: String,
-    pub trial_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PackMetadata {
-    pub created_by: String,
+    pub description: String,
+    pub pack_type: String,
+    pub addons: serde_json::Value, // JSON string from D1 or parsed array
+    pub vote_count: i64,
     pub created_at: String,
     pub updated_at: String,
-    pub origin_url: Option<String>,
-    pub version: u32,
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub user_voted: Option<bool>,
 }
 
+/// Frontend-friendly pack struct sent to the webview.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pack {
     pub id: String,
-    pub name: String,
+    pub title: String,
     pub description: String,
-    #[serde(rename = "type")]
     pub pack_type: String,
+    pub author_name: String,
+    pub is_anonymous: bool,
+    pub vote_count: i64,
     pub tags: Vec<String>,
-    pub metadata: PackMetadata,
     pub addons: Vec<PackAddonEntry>,
-    pub builds: Option<Vec<BuildReference>>,
-    pub rosters: Option<Vec<RosterReference>>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PackIndexItem {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    #[serde(rename = "type")]
-    pub pack_type: String,
-    pub tags: Vec<String>,
-    pub addon_count: u32,
-    pub build_count: u32,
-    pub roster_count: u32,
-    pub updated_at: String,
+impl Pack {
+    fn from_hub(hub: HubPack) -> Self {
+        let addons: Vec<PackAddonEntry> = match &hub.addons {
+            serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_else(|e| {
+                eprintln!(
+                    "Warning: failed to parse addons JSON string for pack {}: {}",
+                    hub.id, e
+                );
+                Vec::new()
+            }),
+            serde_json::Value::Array(_) => serde_json::from_value(hub.addons.clone())
+                .unwrap_or_else(|e| {
+                    eprintln!(
+                        "Warning: failed to parse addons array for pack {}: {}",
+                        hub.id, e
+                    );
+                    Vec::new()
+                }),
+            _ => {
+                eprintln!(
+                    "Warning: unexpected addons type for pack {}: {}",
+                    hub.id, hub.addons
+                );
+                Vec::new()
+            }
+        };
+        Self {
+            id: hub.id,
+            title: hub.title,
+            description: hub.description,
+            pack_type: hub.pack_type,
+            author_name: if hub.is_anonymous {
+                "Anonymous".to_string()
+            } else {
+                hub.author_name
+            },
+            is_anonymous: hub.is_anonymous,
+            vote_count: hub.vote_count,
+            tags: hub.tags,
+            addons,
+            created_at: hub.created_at,
+            updated_at: hub.updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackListResponse {
-    pub items: Vec<PackIndexItem>,
+    pub packs: Vec<HubPack>,
+    pub page: i64,
+    pub sort: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackSingleResponse {
+    pub pack: HubPack,
+}
+
+/// Response sent to the frontend with packs and the current page number.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackPage {
+    pub packs: Vec<Pack>,
+    pub page: i64,
 }
 
 #[tauri::command]
@@ -1641,44 +1691,51 @@ pub async fn list_packs(
     pack_type: Option<String>,
     tag: Option<String>,
     query: Option<String>,
-) -> Result<Vec<PackIndexItem>, String> {
+    sort: Option<String>,
+    page: Option<i64>,
+) -> Result<PackPage, String> {
     tokio::task::spawn_blocking(move || {
-        let client = packs_client();
-        let base = packs_api_url();
-        let mut url = format!("{}/packs", base);
+        let client = pack_hub_client();
+        let base = pack_hub_url();
+        let url = format!("{}/packs", base);
 
-        let mut params = Vec::new();
+        let mut query_params: Vec<(&str, String)> = Vec::new();
         if let Some(t) = &pack_type {
-            params.push(format!("type={}", t));
+            query_params.push(("type", t.clone()));
         }
         if let Some(t) = &tag {
-            params.push(format!("tag={}", t));
+            query_params.push(("tag", t.clone()));
         }
         if let Some(q) = &query {
-            params.push(format!("q={}", q));
+            query_params.push(("q", q.clone()));
         }
-        if !params.is_empty() {
-            url.push('?');
-            url.push_str(&params.join("&"));
+        if let Some(s) = &sort {
+            query_params.push(("sort", s.clone()));
+        }
+        if let Some(p) = &page {
+            query_params.push(("page", p.to_string()));
         }
 
-        let response = client.get(&url).send().map_err(|e| {
+        let response = client.get(&url).query(&query_params).send().map_err(|e| {
             if e.is_connect() || e.is_timeout() {
-                "Could not connect to packs service. It may be offline.".to_string()
+                "Could not connect to Pack Hub. Check your internet connection.".to_string()
             } else {
                 format!("Network error: {}", e)
             }
         })?;
 
         if !response.status().is_success() {
-            return Err(format!("Packs service returned HTTP {}", response.status()));
+            return Err(format!("Pack Hub returned HTTP {}", response.status()));
         }
 
         let body: PackListResponse = response
             .json()
             .map_err(|e| format!("Failed to parse packs response: {}", e))?;
 
-        Ok(body.items)
+        Ok(PackPage {
+            packs: body.packs.into_iter().map(Pack::from_hub).collect(),
+            page: body.page,
+        })
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
@@ -1687,13 +1744,13 @@ pub async fn list_packs(
 #[tauri::command]
 pub async fn get_pack(id: String) -> Result<Pack, String> {
     tokio::task::spawn_blocking(move || {
-        let client = packs_client();
-        let base = packs_api_url();
+        let client = pack_hub_client();
+        let base = pack_hub_url();
         let url = format!("{}/packs/{}", base, id);
 
         let response = client.get(&url).send().map_err(|e| {
             if e.is_connect() || e.is_timeout() {
-                "Could not connect to packs service. It may be offline.".to_string()
+                "Could not connect to Pack Hub. Check your internet connection.".to_string()
             } else {
                 format!("Network error: {}", e)
             }
@@ -1702,12 +1759,14 @@ pub async fn get_pack(id: String) -> Result<Pack, String> {
         match response.status().as_u16() {
             200 => {}
             404 => return Err(format!("Pack \"{}\" not found.", id)),
-            status => return Err(format!("Packs service returned HTTP {}", status)),
+            status => return Err(format!("Pack Hub returned HTTP {}", status)),
         }
 
-        response
-            .json::<Pack>()
-            .map_err(|e| format!("Failed to parse pack response: {}", e))
+        let body: PackSingleResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse pack response: {}", e))?;
+
+        Ok(Pack::from_hub(body.pack))
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?

@@ -624,6 +624,7 @@ function App() {
       {activeDialog === "packs" && (
         <Packs
           addonsPath={addonsPath}
+          installedAddons={addons}
           onClose={() => {
             setActiveDialog(null);
             setDeepLinkPackId(null);
