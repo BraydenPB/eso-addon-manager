@@ -104,6 +104,14 @@ export function Packs({
   const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Create pack form state (lifted here so tab switches don't reset it)
+  const [createStep, setCreateStep] = useState<"details" | "addons">("details");
+  const [createTitle, setCreateTitle] = useState("");
+  const [createDescription, setCreateDescription] = useState("");
+  const [createPackType, setCreatePackType] = useState("addon-pack");
+  const [createTags, setCreateTags] = useState<string[]>([]);
+  const [createAddons, setCreateAddons] = useState<PackAddonEntry[]>([]);
+
   // Installation — selected addons (esouiId set)
   const [installing, setInstalling] = useState(false);
   const [installProgress, setInstallProgress] = useState<{
@@ -320,7 +328,21 @@ export function Packs({
             onRetry={() => loadPacks(searchQuery, 1)}
           />
         ) : (
-          <PackCreateView installedAddons={installedAddons} />
+          <PackCreateView
+            installedAddons={installedAddons}
+            step={createStep}
+            onStepChange={setCreateStep}
+            title={createTitle}
+            onTitleChange={setCreateTitle}
+            description={createDescription}
+            onDescriptionChange={setCreateDescription}
+            packType={createPackType}
+            onPackTypeChange={setCreatePackType}
+            selectedTags={createTags}
+            onTagsChange={setCreateTags}
+            addons={createAddons}
+            onAddonsChange={setCreateAddons}
+          />
         )}
 
         <DialogFooter>
@@ -725,21 +747,39 @@ function AddonRow({
 
 // ── Create Pack View ──────────────────────────────────────────────────────
 
-type CreateStep = "details" | "addons";
 type AddonSource = "search" | "installed";
 
-function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] }) {
-  const [step, setStep] = useState<CreateStep>("details");
+interface CreateViewProps {
+  installedAddons: AddonManifest[];
+  step: "details" | "addons";
+  onStepChange: (s: "details" | "addons") => void;
+  title: string;
+  onTitleChange: (v: string) => void;
+  description: string;
+  onDescriptionChange: (v: string) => void;
+  packType: string;
+  onPackTypeChange: (v: string) => void;
+  selectedTags: string[];
+  onTagsChange: (v: string[]) => void;
+  addons: PackAddonEntry[];
+  onAddonsChange: (v: PackAddonEntry[] | ((prev: PackAddonEntry[]) => PackAddonEntry[])) => void;
+}
 
-  // Pack details
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [packType, setPackType] = useState<string>("addon-pack");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-
-  // Addon list
-  const [addons, setAddons] = useState<PackAddonEntry[]>([]);
-
+function PackCreateView({
+  installedAddons,
+  step,
+  onStepChange: setStep,
+  title,
+  onTitleChange: setTitle,
+  description,
+  onDescriptionChange: setDescription,
+  packType,
+  onPackTypeChange: setPackType,
+  selectedTags,
+  onTagsChange: setSelectedTags,
+  addons,
+  onAddonsChange: setAddons,
+}: CreateViewProps) {
   // Search
   const [addonSource, setAddonSource] = useState<AddonSource>("search");
   const [searchQuery, setSearchQuery] = useState("");
@@ -759,9 +799,9 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
 
   const handleTagToggle = (tag: string) => {
     if (selectedTags.includes(tag)) {
-      setSelectedTags((prev) => prev.filter((t) => t !== tag));
+      setSelectedTags(selectedTags.filter((t) => t !== tag));
     } else if (selectedTags.length < 5) {
-      setSelectedTags((prev) => [...prev, tag]);
+      setSelectedTags([...selectedTags, tag]);
     }
   };
 
@@ -793,19 +833,19 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
       toast.error(`"${entry.name}" is already in the pack.`);
       return;
     }
-    setAddons((prev) => [...prev, entry]);
+    setAddons([...addons, entry]);
     toast.success(`Added "${entry.name}"`);
   };
 
   const handleRemoveAddon = (esouiId: number) => {
-    setAddons((prev) => prev.filter((a) => a.esouiId !== esouiId));
+    setAddons(addons.filter((a) => a.esouiId !== esouiId));
   };
 
   const handleToggleRequired = (esouiId: number) => {
-    setAddons((prev) =>
-      prev.map((a) => (a.esouiId === esouiId ? { ...a, required: !a.required } : a))
-    );
+    setAddons(addons.map((a) => (a.esouiId === esouiId ? { ...a, required: !a.required } : a)));
   };
+
+  const [publishing, setPublishing] = useState(false);
 
   const handlePublish = () => {
     if (!title.trim()) {
@@ -816,6 +856,7 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
       toast.error("Add at least one addon.");
       return;
     }
+    setPublishing(true);
     try {
       const payload = {
         title: title.trim(),
@@ -831,9 +872,14 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
       const encoded = btoa(binary);
       const url = `https://eso-toolkit.github.io/pack-hub?prefill=${encodeURIComponent(encoded)}`;
       window.open(url, "_blank");
-      toast.success("Opening Pack Hub to publish...");
+      toast.success("Pack Hub opened in your browser — sign in to finish publishing.", {
+        duration: 6000,
+      });
     } catch (e) {
       toast.error(`Failed to prepare pack data: ${e}`);
+    } finally {
+      // Brief delay so the button shows feedback before resetting
+      setTimeout(() => setPublishing(false), 1500);
     }
   };
 
@@ -1231,10 +1277,28 @@ function PackCreateView({ installedAddons }: { installedAddons: AddonManifest[] 
           </div>
 
           {/* Publish button */}
-          <Button onClick={handlePublish} disabled={addons.length === 0} className="mt-1">
-            <ExternalLinkIcon className="size-4 mr-1.5" />
-            Publish to Pack Hub
-          </Button>
+          <div className="flex flex-col gap-1.5 mt-1">
+            <Button
+              onClick={handlePublish}
+              disabled={addons.length === 0 || publishing}
+              className="w-full"
+            >
+              {publishing ? (
+                <>
+                  <Loader2Icon className="size-4 animate-spin mr-1.5" />
+                  Opening browser...
+                </>
+              ) : (
+                <>
+                  <ExternalLinkIcon className="size-4 mr-1.5" />
+                  Publish to Pack Hub
+                </>
+              )}
+            </Button>
+            <p className="text-[10px] text-muted-foreground/40 text-center">
+              Opens ESO Toolkit website to complete publishing
+            </p>
+          </div>
         </div>
       )}
     </div>
