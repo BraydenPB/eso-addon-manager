@@ -242,7 +242,7 @@ export function AddonDetail({
             {addon.dependsOn.map((dep) => {
               const installed = installedSet.has(dep.name);
               return (
-                <li key={dep.name} className="flex items-center gap-2 text-sm group">
+                <li key={dep.name} className="flex items-center gap-2 text-sm">
                   <span className={installed ? "text-emerald-400" : "text-destructive"}>
                     {installed ? "\u2713" : "\u2717"}
                   </span>
@@ -252,7 +252,7 @@ export function AddonDetail({
                   )}
                   {installed ? (
                     <button
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                      className="text-xs text-muted-foreground/40 hover:text-red-400 transition-colors disabled:opacity-50"
                       onClick={() => handleRemoveDep(dep.name)}
                       disabled={removingDep === dep.name}
                       title={`Remove ${dep.name}`}
@@ -279,7 +279,7 @@ export function AddonDetail({
                     </button>
                   ) : (
                     <button
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                      className="flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-xs text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                       onClick={() => handleInstallDep(dep.name)}
                       disabled={installingDep === dep.name}
                       title={`Install ${dep.name}`}
@@ -287,21 +287,24 @@ export function AddonDetail({
                       {installingDep === dep.name ? (
                         <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-sky-400" />
                       ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
+                        <>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Install
+                        </>
                       )}
                     </button>
                   )}
@@ -322,7 +325,7 @@ export function AddonDetail({
                 <li
                   key={dep.name}
                   className={cn(
-                    "flex items-center gap-2 text-sm group",
+                    "flex items-center gap-2 text-sm",
                     !installed && "italic text-muted-foreground"
                   )}
                 >
@@ -335,7 +338,7 @@ export function AddonDetail({
                   )}
                   {installed ? (
                     <button
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                      className="text-xs text-muted-foreground/40 hover:text-red-400 transition-colors disabled:opacity-50"
                       onClick={() => handleRemoveDep(dep.name)}
                       disabled={removingDep === dep.name}
                       title={`Remove ${dep.name}`}
@@ -362,7 +365,7 @@ export function AddonDetail({
                     </button>
                   ) : (
                     <button
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                      className="flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-xs text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50 not-italic"
                       onClick={() => handleInstallDep(dep.name)}
                       disabled={installingDep === dep.name}
                       title={`Install ${dep.name}`}
@@ -370,21 +373,24 @@ export function AddonDetail({
                       {installingDep === dep.name ? (
                         <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-sky-400" />
                       ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
+                        <>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Install
+                        </>
                       )}
                     </button>
                   )}
