@@ -266,7 +266,7 @@ export function AddonDetail({
                   </div>
                   {installed ? (
                     <button
-                      className="shrink-0 rounded p-1 text-muted-foreground/30 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+                      className="shrink-0 cursor-pointer rounded p-1 text-muted-foreground/30 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
                       onClick={() => handleRemoveDep(dep.name)}
                       disabled={removingDep === dep.name}
                       title={`Remove ${dep.name}`}
@@ -293,7 +293,7 @@ export function AddonDetail({
                     </button>
                   ) : (
                     <button
-                      className="shrink-0 rounded bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
+                      className="shrink-0 cursor-pointer rounded bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                       onClick={() => handleInstallDep(dep.name)}
                       disabled={installingDep === dep.name}
                       title={`Install ${dep.name}`}
@@ -343,7 +343,7 @@ export function AddonDetail({
                   </div>
                   {installed ? (
                     <button
-                      className="shrink-0 rounded p-1 text-muted-foreground/30 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+                      className="shrink-0 cursor-pointer rounded p-1 text-muted-foreground/30 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
                       onClick={() => handleRemoveDep(dep.name)}
                       disabled={removingDep === dep.name}
                       title={`Remove ${dep.name}`}
@@ -370,7 +370,7 @@ export function AddonDetail({
                     </button>
                   ) : (
                     <button
-                      className="shrink-0 rounded bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
+                      className="shrink-0 cursor-pointer rounded bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                       onClick={() => handleInstallDep(dep.name)}
                       disabled={installingDep === dep.name}
                       title={`Install ${dep.name}`}
