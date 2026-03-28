@@ -22,10 +22,15 @@
     ],
     "security": {
       "csp": "default-src 'self'; img-src 'self' https://cdn-eso.mmoui.com https://*.esoui.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'",
-      "devCsp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' https://cdn-eso.mmoui.com https://*.esoui.com; connect-src 'self' ws://localhost:* http://localhost:*"
+      "devCsp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' https://cdn-eso.mmoui.com https://*.esoui.com; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*"
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["eso-addon-manager"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCRjNENzk1NzBDMjJGNEYKUldSUEw4SndsZGZ6cXdYZlZVYTNqVnlHNWI1cDdvL0NsK0xWZnllVmRWR1cybFF3WGlzdVVUbFQK",
       "endpoints": [

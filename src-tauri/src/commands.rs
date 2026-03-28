@@ -1542,3 +1542,173 @@ pub fn migrate_from_minion(addons_path: String) -> Result<MinionMigrationResult,
         already_tracked,
     })
 }
+
+// ── Pack API ───────────────────────────────────────────────────────────────
+
+/// Base URL for the packs worker. Falls back to local dev.
+fn packs_api_url() -> &'static str {
+    static URL: OnceLock<String> = OnceLock::new();
+    URL.get_or_init(|| {
+        std::env::var("ESO_PACKS_API_URL").unwrap_or_else(|_| "http://127.0.0.1:8787".to_string())
+    })
+}
+
+fn packs_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .user_agent(format!("ESOAddonManager/{}", env!("CARGO_PKG_VERSION")))
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .expect("failed to build packs HTTP client")
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackAddonEntry {
+    pub esoui_id: u32,
+    pub name: String,
+    pub required: bool,
+    pub default_enabled: bool,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildReference {
+    pub build_hub_id: String,
+    pub title: String,
+    pub eso_class: Option<String>,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterReference {
+    pub roster_hub_id: String,
+    pub title: String,
+    pub trial_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackMetadata {
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub origin_url: Option<String>,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pack {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "type")]
+    pub pack_type: String,
+    pub tags: Vec<String>,
+    pub metadata: PackMetadata,
+    pub addons: Vec<PackAddonEntry>,
+    pub builds: Option<Vec<BuildReference>>,
+    pub rosters: Option<Vec<RosterReference>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackIndexItem {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "type")]
+    pub pack_type: String,
+    pub tags: Vec<String>,
+    pub addon_count: u32,
+    pub build_count: u32,
+    pub roster_count: u32,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackListResponse {
+    pub items: Vec<PackIndexItem>,
+}
+
+#[tauri::command]
+pub async fn list_packs(
+    pack_type: Option<String>,
+    tag: Option<String>,
+    query: Option<String>,
+) -> Result<Vec<PackIndexItem>, String> {
+    tokio::task::spawn_blocking(move || {
+        let client = packs_client();
+        let base = packs_api_url();
+        let mut url = format!("{}/packs", base);
+
+        let mut params = Vec::new();
+        if let Some(t) = &pack_type {
+            params.push(format!("type={}", t));
+        }
+        if let Some(t) = &tag {
+            params.push(format!("tag={}", t));
+        }
+        if let Some(q) = &query {
+            params.push(format!("q={}", q));
+        }
+        if !params.is_empty() {
+            url.push('?');
+            url.push_str(&params.join("&"));
+        }
+
+        let response = client.get(&url).send().map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                "Could not connect to packs service. It may be offline.".to_string()
+            } else {
+                format!("Network error: {}", e)
+            }
+        })?;
+
+        if !response.status().is_success() {
+            return Err(format!("Packs service returned HTTP {}", response.status()));
+        }
+
+        let body: PackListResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse packs response: {}", e))?;
+
+        Ok(body.items)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn get_pack(id: String) -> Result<Pack, String> {
+    tokio::task::spawn_blocking(move || {
+        let client = packs_client();
+        let base = packs_api_url();
+        let url = format!("{}/packs/{}", base, id);
+
+        let response = client.get(&url).send().map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                "Could not connect to packs service. It may be offline.".to_string()
+            } else {
+                format!("Network error: {}", e)
+            }
+        })?;
+
+        match response.status().as_u16() {
+            200 => {}
+            404 => return Err(format!("Pack \"{}\" not found.", id)),
+            status => return Err(format!("Packs service returned HTTP {}", status)),
+        }
+
+        response
+            .json::<Pack>()
+            .map_err(|e| format!("Failed to parse pack response: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}

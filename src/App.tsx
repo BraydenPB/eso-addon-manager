@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { useAppUpdate, AppUpdateBanner } from "./components/app-update";
 import { AddonList } from "./components/addon-list";
 import { AddonDetail } from "./components/addon-detail";
 import { DiscoverDetail } from "./components/discover-detail";
 import { Profiles } from "./components/profiles";
+import { Packs } from "./components/packs";
 import { Backups } from "./components/backups";
 import { ApiCompat } from "./components/api-compat";
 import { Characters } from "./components/characters";
@@ -14,7 +16,14 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { getSetting, setSetting } from "@/lib/store";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { RefreshCwIcon, SettingsIcon, MinusIcon, SquareIcon, XIcon } from "lucide-react";
+import {
+  RefreshCwIcon,
+  SettingsIcon,
+  MinusIcon,
+  SquareIcon,
+  XIcon,
+  PackageIcon,
+} from "lucide-react";
 import type {
   AddonManifest,
   UpdateCheckResult,
@@ -34,7 +43,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [activeDialog, setActiveDialog] = useState<
-    "settings" | "profiles" | "backups" | "api-compat" | "characters" | null
+    "settings" | "profiles" | "packs" | "backups" | "api-compat" | "characters" | null
   >(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [updateResults, setUpdateResults] = useState<UpdateCheckResult[]>([]);
@@ -42,6 +51,9 @@ function App() {
   const [updatingAll, setUpdatingAll] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+
+  // Deep link: pack ID to auto-open
+  const [deepLinkPackId, setDeepLinkPackId] = useState<string | null>(null);
 
   // Navigation
   const [viewMode, setViewMode] = useState<ViewMode>("installed");
@@ -67,6 +79,17 @@ function App() {
     return () => {
       window.removeEventListener("offline", goOffline);
       window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
+  // Deep link listener: eso-addon-manager://pack/{id}
+  useEffect(() => {
+    const unlisten = listen<string>("deep-link-pack", (event) => {
+      setDeepLinkPackId(event.payload);
+      setActiveDialog("packs");
+    });
+    return () => {
+      unlisten.then((fn) => fn());
     };
   }, []);
 
@@ -476,6 +499,15 @@ function App() {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                onClick={() => setActiveDialog("packs")}
+                aria-label="Addon Packs"
+                title="Addon Packs"
+              >
+                <PackageIcon />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setActiveDialog("settings")}
                 aria-label="Settings"
                 title="Settings"
@@ -588,6 +620,18 @@ function App() {
           />
         )}
       </div>
+
+      {activeDialog === "packs" && (
+        <Packs
+          addonsPath={addonsPath}
+          onClose={() => {
+            setActiveDialog(null);
+            setDeepLinkPackId(null);
+          }}
+          onRefresh={handleRefresh}
+          initialPackId={deepLinkPackId}
+        />
+      )}
 
       {activeDialog === "profiles" && (
         <Profiles
