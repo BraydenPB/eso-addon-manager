@@ -35,6 +35,8 @@ interface AddonListProps {
   onSortChange: (mode: SortMode) => void;
   filterMode: FilterMode;
   onFilterChange: (mode: FilterMode) => void;
+  activeTagFilter: string | null;
+  onActiveTagFilterChange: (tag: string | null) => void;
   selectedFolders: Set<string>;
   onToggleSelect: (folderName: string) => void;
   viewMode: ViewMode;
@@ -51,8 +53,11 @@ const FILTERS: [FilterMode, string][] = [
   ["all", "All"],
   ["addons", "Addons"],
   ["libraries", "Libs"],
+  ["favorites", "\u2605 Favorites"],
   ["outdated", "Outdated"],
   ["missing-deps", "Issues"],
+  ["untracked", "Untracked"],
+  ["tagged", "Tagged"],
 ];
 
 export function AddonList({
@@ -68,6 +73,8 @@ export function AddonList({
   onSortChange,
   filterMode,
   onFilterChange,
+  activeTagFilter,
+  onActiveTagFilterChange,
   selectedFolders,
   onToggleSelect,
   viewMode,
@@ -89,11 +96,17 @@ export function AddonList({
       all: allAddons.length,
       addons: allAddons.filter((a) => !a.isLibrary).length,
       libraries: allAddons.filter((a) => a.isLibrary).length,
+      favorites: allAddons.filter((a) => a.tags.includes("favorite")).length,
       outdated: allAddons.filter((a) => updatesMap.has(a.folderName)).length,
       "missing-deps": allAddons.filter((a) => a.missingDependencies.length > 0).length,
+      untracked: allAddons.filter((a) => !a.esouiId).length,
+      tagged: allAddons.filter((a) => a.tags.length > 0).length,
     }),
     [allAddons, updatesMap]
   );
+
+  // Collect all unique tags across addons for the tag sub-filter
+  const allTags = useMemo(() => [...new Set(allAddons.flatMap((a) => a.tags))].sort(), [allAddons]);
 
   const batchMode = selectedFolders.size > 0;
 
@@ -179,27 +192,65 @@ export function AddonList({
             role="tablist"
             aria-label="Filter addons"
           >
-            {FILTERS.map(([mode, label]) => (
-              <button
-                key={mode}
-                role="tab"
-                aria-selected={filterMode === mode}
-                aria-label={`Filter by ${label}`}
-                className={cn(
-                  "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150",
-                  filterMode === mode
-                    ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
-                    : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
-                )}
-                onClick={() => onFilterChange(mode)}
-              >
-                {label}
-                {((mode !== "outdated" && mode !== "missing-deps") || filterCounts[mode] > 0) && (
+            {FILTERS.map(([mode, label]) => {
+              const hideIfZero = ["outdated", "missing-deps", "favorites", "untracked", "tagged"];
+              if (hideIfZero.includes(mode) && filterCounts[mode] === 0) return null;
+              return (
+                <button
+                  key={mode}
+                  role="tab"
+                  aria-selected={filterMode === mode}
+                  aria-label={`Filter by ${label}`}
+                  className={cn(
+                    "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150",
+                    filterMode === mode
+                      ? mode === "favorites"
+                        ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
+                        : "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
+                      : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
+                  )}
+                  onClick={() => {
+                    onFilterChange(mode);
+                    if (mode !== "tagged") onActiveTagFilterChange(null);
+                  }}
+                >
+                  {label}
                   <span className="ml-1 opacity-50">({filterCounts[mode]})</span>
-                )}
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
+
+          {/* Tag sub-filter when "Tagged" is active */}
+          {filterMode === "tagged" && allTags.length > 0 && (
+            <div className="flex gap-1 px-3 pb-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button
+                className={cn(
+                  "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition-all duration-150 border",
+                  !activeTagFilter
+                    ? "bg-sky-500/15 text-sky-400 border-sky-500/25"
+                    : "text-muted-foreground/50 border-transparent hover:text-muted-foreground hover:bg-white/[0.04]"
+                )}
+                onClick={() => onActiveTagFilterChange(null)}
+              >
+                Any tag
+              </button>
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  className={cn(
+                    "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition-all duration-150 border",
+                    activeTagFilter === tag
+                      ? "bg-sky-500/15 text-sky-400 border-sky-500/25"
+                      : "text-muted-foreground/50 border-transparent hover:text-muted-foreground hover:bg-white/[0.04]"
+                  )}
+                  onClick={() => onActiveTagFilterChange(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Sort + count bar */}
           <div className="flex items-center justify-between border-y border-white/[0.06] px-3 py-1.5">
@@ -289,7 +340,12 @@ export function AddonList({
                         />
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="truncate text-sm font-medium">{addon.title}</div>
+                        <div className="truncate text-sm font-medium">
+                          {addon.tags.includes("favorite") && (
+                            <span className="text-[#c4a44a] mr-1">{"\u2605"}</span>
+                          )}
+                          {addon.title}
+                        </div>
                         <div className="mt-0.5 flex items-center gap-1.5">
                           <span className="text-xs text-muted-foreground/50">
                             {addon.version || `v${addon.addonVersion ?? "?"}`}
@@ -322,6 +378,22 @@ export function AddonList({
                               className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
                             >
                               {addon.missingDependencies.length} missing
+                            </Badge>
+                          )}
+                          {addon.tags.includes("broken") && (
+                            <Badge
+                              variant="outline"
+                              className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
+                            >
+                              Broken
+                            </Badge>
+                          )}
+                          {addon.tags.includes("testing") && (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
+                            >
+                              Testing
                             </Badge>
                           )}
                         </div>

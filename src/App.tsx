@@ -235,6 +235,21 @@ function App() {
     }
   };
 
+  const handleTagsChange = useCallback(
+    async (folderName: string, tags: string[]) => {
+      try {
+        await invoke("set_addon_tags", { addonsPath, folderName, tags });
+        // Update local state without a full rescan
+        setAddons((prev) => prev.map((a) => (a.folderName === folderName ? { ...a, tags } : a)));
+        // Keep selectedAddon in sync
+        setSelectedAddon((prev) => (prev?.folderName === folderName ? { ...prev, tags } : prev));
+      } catch (e) {
+        toast.error(`Failed to save tags: ${e}`);
+      }
+    },
+    [addonsPath]
+  );
+
   // Lightweight refresh after a single addon update — just rescan
   // manifests and clear that addon's update result without re-checking
   // every addon against ESOUI (which takes 15+ seconds).
@@ -356,6 +371,9 @@ function App() {
     [updateResults]
   );
 
+  // Active tag filter (when filterMode is "tagged", filter by this tag)
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+
   const filteredAddons = useMemo(
     () =>
       addons
@@ -365,7 +383,8 @@ function App() {
             const matchesSearch =
               addon.title.toLowerCase().includes(q) ||
               addon.folderName.toLowerCase().includes(q) ||
-              addon.author.toLowerCase().includes(q);
+              addon.author.toLowerCase().includes(q) ||
+              addon.tags.some((t) => t.toLowerCase().includes(q));
             if (!matchesSearch) return false;
           }
           switch (filterMode) {
@@ -377,6 +396,12 @@ function App() {
               return updatesSet.has(addon.folderName);
             case "missing-deps":
               return addon.missingDependencies.length > 0;
+            case "favorites":
+              return addon.tags.includes("favorite");
+            case "tagged":
+              return activeTagFilter ? addon.tags.includes(activeTagFilter) : addon.tags.length > 0;
+            case "untracked":
+              return !addon.esouiId;
             default:
               return true;
           }
@@ -390,7 +415,7 @@ function App() {
               return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
           }
         }),
-    [addons, searchQuery, filterMode, sortMode, updatesSet]
+    [addons, searchQuery, filterMode, sortMode, updatesSet, activeTagFilter]
   );
 
   const selectedUpdateResult = useMemo(
@@ -555,6 +580,8 @@ function App() {
           onSortChange={handleSortChange}
           filterMode={filterMode}
           onFilterChange={handleFilterChange}
+          activeTagFilter={activeTagFilter}
+          onActiveTagFilterChange={setActiveTagFilter}
           selectedFolders={selectedFolders}
           onToggleSelect={handleToggleSelect}
           viewMode={viewMode}
@@ -578,6 +605,7 @@ function App() {
             }}
             updateResult={selectedUpdateResult}
             onAddonUpdated={handleAddonUpdated}
+            onTagsChange={handleTagsChange}
           />
         ) : (
           <DiscoverDetail

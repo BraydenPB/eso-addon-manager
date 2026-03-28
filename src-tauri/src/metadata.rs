@@ -12,6 +12,8 @@ pub struct AddonMetadata {
     pub installed_version: String,
     pub download_url: String,
     pub installed_at: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,6 +162,12 @@ pub fn record_install(
     version: &str,
     download_url: &str,
 ) {
+    // Preserve existing tags when re-recording an install (e.g. update)
+    let existing_tags = store
+        .addons
+        .get(folder_name)
+        .map(|m| m.tags.clone())
+        .unwrap_or_default();
     store.addons.insert(
         folder_name.to_string(),
         AddonMetadata {
@@ -172,6 +180,7 @@ pub fn record_install(
                     .unwrap_or_default()
                     .as_secs(),
             ),
+            tags: existing_tags,
         },
     );
 }

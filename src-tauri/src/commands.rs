@@ -335,12 +335,34 @@ fn scan_installed_addons_blocking(addons_path: &str) -> Result<Vec<AddonManifest
 
         if let Some(meta) = store.addons.get(&addon.folder_name) {
             addon.esoui_id = Some(meta.esoui_id);
+            addon.tags = meta.tags.clone();
         }
     }
 
     addons.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
 
     Ok(addons)
+}
+
+#[tauri::command]
+pub async fn set_addon_tags(
+    addons_path: String,
+    folder_name: String,
+    tags: Vec<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let addons_dir = PathBuf::from(&addons_path);
+        let mut store = metadata::load_metadata(&addons_dir);
+        if let Some(meta) = store.addons.get_mut(&folder_name) {
+            meta.tags = tags;
+            metadata::save_metadata(&addons_dir, &store)?;
+            Ok(())
+        } else {
+            Err(format!("No metadata entry for {}", folder_name))
+        }
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]

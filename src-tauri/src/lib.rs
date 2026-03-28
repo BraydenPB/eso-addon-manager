@@ -96,6 +96,7 @@ pub fn run() {
             commands::set_addons_path,
             commands::detect_addons_folder,
             commands::scan_installed_addons,
+            commands::set_addon_tags,
             commands::resolve_esoui_addon,
             commands::search_esoui_addons,
             commands::fetch_esoui_detail,

@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { AddonManifest, UpdateCheckResult, InstallResult } from "../types";
+import { PRESET_TAGS } from "../types";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { GlassPanel } from "@/components/ui/glass-panel";
@@ -16,6 +17,7 @@ interface AddonDetailProps {
   onRemove: () => void;
   updateResult: UpdateCheckResult | null;
   onAddonUpdated: (esouiId: number) => void;
+  onTagsChange: (folderName: string, tags: string[]) => void;
 }
 
 export function AddonDetail({
@@ -25,6 +27,7 @@ export function AddonDetail({
   onRemove,
   updateResult,
   onAddonUpdated,
+  onTagsChange,
 }: AddonDetailProps) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -33,6 +36,8 @@ export function AddonDetail({
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [installingDep, setInstallingDep] = useState<string | null>(null);
   const [removingDep, setRemovingDep] = useState<string | null>(null);
+  const [customTagInput, setCustomTagInput] = useState("");
+  const customTagRef = useRef<HTMLInputElement>(null);
 
   const installedSet = useMemo(
     () => new Set(installedAddons.map((a) => a.folderName)),
@@ -227,6 +232,86 @@ export function AddonDetail({
           </dd>
         </dl>
       </GlassPanel>
+
+      {/* Tags */}
+      <div className="mb-5">
+        <SectionHeader className="mb-2">Tags</SectionHeader>
+        <div className="flex flex-wrap gap-1.5">
+          {PRESET_TAGS.map((tag) => {
+            const active = addon.tags.includes(tag);
+            return (
+              <button
+                key={tag}
+                onClick={() => {
+                  const next = active ? addon.tags.filter((t) => t !== tag) : [...addon.tags, tag];
+                  onTagsChange(addon.folderName, next);
+                }}
+                className={cn(
+                  "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-150 border",
+                  active
+                    ? tag === "favorite"
+                      ? "bg-[#c4a44a]/15 text-[#c4a44a] border-[#c4a44a]/25"
+                      : tag === "broken"
+                        ? "bg-red-500/15 text-red-400 border-red-500/25"
+                        : tag === "testing"
+                          ? "bg-amber-500/15 text-amber-400 border-amber-500/25"
+                          : tag === "essential"
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"
+                            : "bg-violet-500/15 text-violet-400 border-violet-500/25"
+                    : "bg-white/[0.03] text-muted-foreground/50 border-white/[0.06] hover:bg-white/[0.06] hover:text-muted-foreground"
+                )}
+              >
+                {tag === "favorite" && (active ? "\u2605 " : "\u2606 ")}
+                {tag}
+              </button>
+            );
+          })}
+          {/* Custom tags */}
+          {addon.tags
+            .filter((t) => !(PRESET_TAGS as readonly string[]).includes(t))
+            .map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 rounded-md bg-sky-500/15 text-sky-400 border border-sky-500/25 px-2.5 py-1 text-xs font-medium"
+              >
+                {tag}
+                <button
+                  onClick={() =>
+                    onTagsChange(
+                      addon.folderName,
+                      addon.tags.filter((t) => t !== tag)
+                    )
+                  }
+                  className="cursor-pointer ml-0.5 text-sky-400/60 hover:text-sky-400 transition-colors"
+                  aria-label={`Remove tag ${tag}`}
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          {/* Add custom tag */}
+          <form
+            className="inline-flex"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const tag = customTagInput.trim().toLowerCase();
+              if (tag && !addon.tags.includes(tag)) {
+                onTagsChange(addon.folderName, [...addon.tags, tag]);
+              }
+              setCustomTagInput("");
+            }}
+          >
+            <input
+              ref={customTagRef}
+              type="text"
+              value={customTagInput}
+              onChange={(e) => setCustomTagInput(e.target.value)}
+              placeholder="+ tag"
+              className="w-16 focus:w-24 transition-all duration-150 rounded-md bg-white/[0.03] border border-white/[0.06] px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/30 outline-none focus:border-sky-400/30 focus:bg-white/[0.05]"
+            />
+          </form>
+        </div>
+      </div>
 
       {addon.description && (
         <div className="mb-5">
