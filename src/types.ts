@@ -18,7 +18,6 @@ export interface AddonManifest {
   esouiId: number | null;
   tags: string[];
   esouiLastUpdate: number;
-  healthStatus: "healthy" | "stale" | "very_stale" | "unknown";
 }
 
 export interface EsouiAddonInfo {

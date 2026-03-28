@@ -340,7 +340,6 @@ fn scan_installed_addons_blocking(addons_path: &str) -> Result<Vec<AddonManifest
             addon.esoui_id = Some(meta.esoui_id);
             addon.tags = meta.tags.clone();
             addon.esoui_last_update = meta.esoui_last_update;
-            addon.health_status = metadata::compute_health_status(meta.esoui_last_update);
         }
     }
 

@@ -176,10 +176,6 @@ export function AddonDetail({
             </InfoPill>
           </a>
         )}
-        {addon.healthStatus === "stale" && <InfoPill color="amber">Stale (&gt;90d)</InfoPill>}
-        {addon.healthStatus === "very_stale" && (
-          <InfoPill color="red">Very Stale (&gt;1y)</InfoPill>
-        )}
       </div>
 
       {updateResult?.hasUpdate && (
@@ -239,27 +235,7 @@ export function AddonDetail({
               <dt className="text-muted-foreground/60 font-heading text-xs uppercase tracking-wider">
                 Last Updated
               </dt>
-              <dd className="flex items-center gap-2">
-                <span>{new Date(addon.esouiLastUpdate).toLocaleDateString()}</span>
-                {addon.healthStatus === "healthy" && (
-                  <span
-                    className="inline-block h-2 w-2 rounded-full bg-emerald-400"
-                    title="Recently updated"
-                  />
-                )}
-                {addon.healthStatus === "stale" && (
-                  <span
-                    className="inline-block h-2 w-2 rounded-full bg-amber-400"
-                    title="Not updated in 90+ days"
-                  />
-                )}
-                {addon.healthStatus === "very_stale" && (
-                  <span
-                    className="inline-block h-2 w-2 rounded-full bg-red-400"
-                    title="Not updated in 1+ year"
-                  />
-                )}
-              </dd>
+              <dd>{new Date(addon.esouiLastUpdate).toLocaleDateString()}</dd>
             </>
           )}
         </dl>

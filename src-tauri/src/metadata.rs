@@ -207,26 +207,6 @@ pub fn record_install_ext(
     );
 }
 
-/// Health status based on how recently the addon was updated on ESOUI.
-/// Takes `esoui_last_update` in epoch milliseconds.
-pub fn compute_health_status(esoui_last_update: u64) -> String {
-    if esoui_last_update == 0 {
-        return "unknown".to_string();
-    }
-    let now_millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    let age_days = now_millis.saturating_sub(esoui_last_update) / (1000 * 60 * 60 * 24);
-    if age_days > 365 {
-        "very_stale".to_string()
-    } else if age_days > 90 {
-        "stale".to_string()
-    } else {
-        "healthy".to_string()
-    }
-}
-
 pub fn remove_entry(store: &mut MetadataStore, folder_name: &str) {
     store.addons.remove(folder_name);
 }

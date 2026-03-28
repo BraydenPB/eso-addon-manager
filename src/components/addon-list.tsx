@@ -396,24 +396,6 @@ export function AddonList({
                               Testing
                             </Badge>
                           )}
-                          {addon.healthStatus === "stale" && (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
-                              title="Not updated on ESOUI in 90+ days"
-                            >
-                              Stale
-                            </Badge>
-                          )}
-                          {addon.healthStatus === "very_stale" && (
-                            <Badge
-                              variant="outline"
-                              className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
-                              title="Not updated on ESOUI in 1+ year"
-                            >
-                              Stale
-                            </Badge>
-                          )}
                         </div>
                       </div>
                     </div>
