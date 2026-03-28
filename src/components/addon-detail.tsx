@@ -31,6 +31,8 @@ export function AddonDetail({
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [installingDep, setInstallingDep] = useState<string | null>(null);
+  const [removingDep, setRemovingDep] = useState<string | null>(null);
 
   const installedSet = useMemo(
     () => new Set(installedAddons.map((a) => a.folderName)),
@@ -112,6 +114,38 @@ export function AddonDetail({
       setUpdateError(String(e));
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleInstallDep = async (depName: string) => {
+    setInstallingDep(depName);
+    try {
+      await invoke<InstallResult>("install_dependency", {
+        addonsPath,
+        depName,
+      });
+      toast.success(`Installed ${depName}`);
+      onRemove(); // refresh addon list
+    } catch (e) {
+      toast.error(`Failed to install ${depName}: ${String(e)}`);
+    } finally {
+      setInstallingDep(null);
+    }
+  };
+
+  const handleRemoveDep = async (depName: string) => {
+    setRemovingDep(depName);
+    try {
+      await invoke("remove_addon", {
+        addonsPath,
+        folderName: depName,
+      });
+      toast.success(`Removed ${depName}`);
+      onRemove(); // refresh addon list
+    } catch (e) {
+      toast.error(`Failed to remove ${depName}: ${String(e)}`);
+    } finally {
+      setRemovingDep(null);
     }
   };
 
@@ -208,13 +242,68 @@ export function AddonDetail({
             {addon.dependsOn.map((dep) => {
               const installed = installedSet.has(dep.name);
               return (
-                <li key={dep.name} className="flex items-center gap-2 text-sm">
+                <li key={dep.name} className="flex items-center gap-2 text-sm group">
                   <span className={installed ? "text-emerald-400" : "text-destructive"}>
                     {installed ? "\u2713" : "\u2717"}
                   </span>
-                  <span>{dep.name}</span>
+                  <span className="flex-1">{dep.name}</span>
                   {dep.min_version !== null && (
                     <span className="text-xs text-muted-foreground">&gt;={dep.min_version}</span>
+                  )}
+                  {installed ? (
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                      onClick={() => handleRemoveDep(dep.name)}
+                      disabled={removingDep === dep.name}
+                      title={`Remove ${dep.name}`}
+                    >
+                      {removingDep === dep.name ? (
+                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-red-400" />
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                        </svg>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                      onClick={() => handleInstallDep(dep.name)}
+                      disabled={installingDep === dep.name}
+                      title={`Install ${dep.name}`}
+                    >
+                      {installingDep === dep.name ? (
+                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-sky-400" />
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                      )}
+                    </button>
                   )}
                 </li>
               );
@@ -233,16 +322,71 @@ export function AddonDetail({
                 <li
                   key={dep.name}
                   className={cn(
-                    "flex items-center gap-2 text-sm",
+                    "flex items-center gap-2 text-sm group",
                     !installed && "italic text-muted-foreground"
                   )}
                 >
                   <span className={installed ? "text-emerald-400" : ""}>
                     {installed ? "\u2713" : "\u25CB"}
                   </span>
-                  <span>{dep.name}</span>
+                  <span className="flex-1">{dep.name}</span>
                   {dep.min_version !== null && (
                     <span className="text-xs text-muted-foreground">&gt;={dep.min_version}</span>
+                  )}
+                  {installed ? (
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                      onClick={() => handleRemoveDep(dep.name)}
+                      disabled={removingDep === dep.name}
+                      title={`Remove ${dep.name}`}
+                    >
+                      {removingDep === dep.name ? (
+                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-red-400" />
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                        </svg>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                      onClick={() => handleInstallDep(dep.name)}
+                      disabled={installingDep === dep.name}
+                      title={`Install ${dep.name}`}
+                    >
+                      {installingDep === dep.name ? (
+                        <span className="inline-block h-3 w-3 animate-spin rounded-full border border-white/[0.1] border-t-sky-400" />
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                      )}
+                    </button>
                   )}
                 </li>
               );

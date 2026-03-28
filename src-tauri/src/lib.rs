@@ -101,6 +101,7 @@ pub fn run() {
             commands::fetch_esoui_detail,
             commands::install_addon,
             commands::remove_addon,
+            commands::install_dependency,
             commands::check_for_updates,
             commands::update_addon,
             commands::export_addon_list,
