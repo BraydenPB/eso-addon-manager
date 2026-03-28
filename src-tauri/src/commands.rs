@@ -465,6 +465,34 @@ pub fn remove_addon(
 }
 
 #[tauri::command]
+pub async fn install_dependency(
+    state: tauri::State<'_, AllowedAddonsPath>,
+    addons_path: String,
+    dep_name: String,
+) -> Result<InstallResult, String> {
+    let addons_dir = require_allowed_path(&state, &addons_path)?;
+    tokio::task::spawn_blocking(move || install_dependency_blocking(&addons_dir, &dep_name))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn install_dependency_blocking(addons_dir: &Path, dep_name: &str) -> Result<InstallResult, String> {
+    let mut store = metadata::load_metadata(addons_dir);
+    match try_install_dep(dep_name, addons_dir, &mut store) {
+        Ok(folders) => {
+            metadata::save_metadata(addons_dir, &store)?;
+            Ok(InstallResult {
+                installed_folders: folders,
+                installed_deps: vec![],
+                failed_deps: vec![],
+                skipped_deps: vec![],
+            })
+        }
+        Err(reason) => Err(format!("Failed to install {}: {}", dep_name, reason)),
+    }
+}
+
+#[tauri::command]
 pub async fn check_for_updates(addons_path: String) -> Result<Vec<UpdateCheckResult>, String> {
     tokio::task::spawn_blocking(move || check_for_updates_blocking(&addons_path))
         .await
