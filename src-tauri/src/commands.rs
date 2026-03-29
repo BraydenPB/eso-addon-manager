@@ -1677,6 +1677,16 @@ fn pack_hub_url() -> &'static str {
     })
 }
 
+/// Validate a pack ID to prevent path traversal in URL interpolation.
+fn validate_pack_id(id: &str) -> Result<(), String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
+    if id.is_empty() || id.len() > 100 || !re.is_match(id) {
+        return Err("Invalid pack ID.".to_string());
+    }
+    Ok(())
+}
+
 fn pack_hub_client() -> &'static reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -1874,6 +1884,7 @@ pub async fn list_packs(
 
 #[tauri::command]
 pub async fn get_pack(state: tauri::State<'_, AuthState>, id: String) -> Result<Pack, String> {
+    validate_pack_id(&id)?;
     let access_token = get_current_token(&state);
 
     tokio::task::spawn_blocking(move || {
@@ -1934,6 +1945,7 @@ pub async fn vote_pack(
     app: tauri::AppHandle,
     pack_id: String,
 ) -> Result<VoteResponse, String> {
+    validate_pack_id(&pack_id)?;
     // Get current access token (refresh if needed)
     let access_token = {
         let tokens = {

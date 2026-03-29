@@ -315,6 +315,7 @@ export function Packs({
 
     let completed = 0;
     let failed = 0;
+    const failedNames: string[] = [];
 
     for (const addon of newAddonsToInstall) {
       try {
@@ -331,6 +332,7 @@ export function Packs({
         completed++;
       } catch {
         failed++;
+        failedNames.push(addon.name);
       }
       setInstallProgress({ completed, failed, total: newAddonsToInstall.length });
     }
@@ -339,7 +341,9 @@ export function Packs({
     setInstallProgress(null);
 
     if (failed > 0) {
-      toast.warning(`Installed ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`);
+      toast.warning(
+        `Installed ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed: ${failedNames.join(", ")}`
+      );
     } else {
       toast.success(
         `Installed ${completed} addon${completed !== 1 ? "s" : ""} from "${decodeHtml(selectedPack.title)}"`
@@ -395,7 +399,11 @@ export function Packs({
       };
       setPacks((prev) => prev.map((p) => (p.id === packId ? revert(p) : p)));
       setSelectedPack((prev) => (prev?.id === packId ? revert(prev) : prev));
-      toast.error(String(e));
+      const msg = String(e);
+      if (msg.includes("expired") || msg.includes("sign in") || msg.includes("Sign in")) {
+        onAuthChange(null);
+      }
+      toast.error(msg);
     } finally {
       setVotingPacks((prev) => {
         const next = new Set(prev);
