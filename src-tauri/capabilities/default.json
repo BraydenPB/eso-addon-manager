@@ -3,15 +3,25 @@
   "description": "Default capabilities for the main window",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
-    "core:window:allow-start-dragging",
-    "dialog:default",
-    "store:default",
-    "updater:default",
-    "process:default",
-    "opener:default"
+    "dialog:allow-open",
+    "store:allow-load",
+    "store:allow-get",
+    "store:allow-set",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:allow-restart",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://www.esoui.com/*"
+        }
+      ]
+    }
   ]
 }
