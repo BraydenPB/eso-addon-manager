@@ -188,6 +188,9 @@ async function handleDeletePack(
 
 // ── POST /admin/seed (dev only) ────────────────────────────────────
 async function handleSeed(request: Request, env: Env): Promise<Response> {
+  if (!requireAuth(request, env)) {
+    return unauthorized(request);
+  }
   const errors: string[] = [];
 
   for (const pack of SEED_PACKS) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type {
@@ -64,6 +64,7 @@ interface PacksProps {
 }
 
 type PackTypeFilter = "all" | "addon-pack" | "build-pack" | "roster-pack";
+type SortOption = "votes" | "newest" | "updated";
 type TabMode = "browse" | "create";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -137,8 +138,15 @@ export function Packs({
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<PackTypeFilter>("all");
+  const [sortMode, setSortMode] = useState<SortOption>("votes");
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [confirmInstall, setConfirmInstall] = useState(false);
+
+  const installedEsouiIds = useMemo(
+    () => new Set(installedAddons.filter((a) => a.esouiId && a.esouiId > 0).map((a) => a.esouiId!)),
+    [installedAddons]
+  );
 
   // Detail view
   const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
@@ -170,8 +178,10 @@ export function Packs({
     }
   }, [selectedPack]);
 
+  const loadPacksSeqRef = useRef(0);
   const loadPacks = useCallback(
     async (q: string, page: number = 1) => {
+      const seq = ++loadPacksSeqRef.current;
       if (page === 1) {
         setLoading(true);
       } else {
@@ -183,25 +193,38 @@ export function Packs({
           packType: typeFilter === "all" ? null : typeFilter,
           tag: null,
           query: q || null,
-          sort: "votes",
+          sort: sortMode,
           page,
         });
+        // Discard stale response if a newer request was fired
+        if (seq !== loadPacksSeqRef.current) return;
         if (page === 1) {
           setPacks(result.packs);
         } else {
           setPacks((prev) => [...prev, ...result.packs]);
         }
         setCurrentPage(result.page);
-        // If the API returned a full page, there might be more
-        setHasMore(result.packs.length >= 20);
+        // If the API returned fewer results than the page size, there are no more pages
+        const PAGE_SIZE = 10;
+        setHasMore(result.packs.length >= PAGE_SIZE);
       } catch (e) {
-        setError(String(e));
+        if (seq !== loadPacksSeqRef.current) return;
+        const msg = String(e);
+        if (msg.includes("connect") || msg.includes("internet")) {
+          setError("Could not reach Pack Hub. Check your internet connection and try again.");
+        } else if (msg.includes("parse") || msg.includes("JSON")) {
+          setError("Pack Hub returned an unexpected response. This may be a temporary issue.");
+        } else {
+          setError("Something went wrong loading packs. Please try again.");
+        }
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (seq === loadPacksSeqRef.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
-    [typeFilter]
+    [typeFilter, sortMode]
   );
 
   const handleLoadMore = () => {
@@ -223,27 +246,36 @@ export function Packs({
     };
   }, [searchQuery, loadPacks]);
 
+  const selectPackSeqRef = useRef(0);
+  const handleSelectPack = useCallback(async (id: string) => {
+    const seq = ++selectPackSeqRef.current;
+    setLoadingDetail(true);
+    try {
+      const pack = await invoke<Pack>("get_pack", { id });
+      if (seq !== selectPackSeqRef.current) return;
+      setSelectedPack(pack);
+    } catch (e) {
+      if (seq !== selectPackSeqRef.current) return;
+      toast.error(`Failed to load pack: ${e}`);
+    } finally {
+      if (seq === selectPackSeqRef.current) {
+        setLoadingDetail(false);
+      }
+    }
+  }, []);
+
   // Auto-open a specific pack when triggered via deep link
   useEffect(() => {
     if (initialPackId) {
       handleSelectPack(initialPackId);
     }
-  }, [initialPackId]);
-
-  const handleSelectPack = async (id: string) => {
-    setLoadingDetail(true);
-    try {
-      const pack = await invoke<Pack>("get_pack", { id });
-      setSelectedPack(pack);
-    } catch (e) {
-      toast.error(`Failed to load pack: ${e}`);
-    } finally {
-      setLoadingDetail(false);
-    }
-  };
+  }, [initialPackId, handleSelectPack]);
 
   const handleBack = () => {
     setSelectedPack(null);
+    setConfirmInstall(false);
+    setInstalling(false);
+    setInstallProgress(null);
   };
 
   const handleToggleAddon = (esouiId: number, required: boolean) => {
@@ -260,21 +292,31 @@ export function Packs({
     });
   };
 
+  const newAddonsToInstall = useMemo(
+    () =>
+      selectedPack
+        ? selectedPack.addons.filter(
+            (a) => selectedAddons.has(a.esouiId) && !installedEsouiIds.has(a.esouiId)
+          )
+        : [],
+    [selectedPack, selectedAddons, installedEsouiIds]
+  );
+
   const handleInstallPack = async () => {
     if (!selectedPack) return;
-    const toInstall = selectedPack.addons.filter((a) => selectedAddons.has(a.esouiId));
-    if (toInstall.length === 0) {
-      toast.info("No addons selected to install.");
+    if (newAddonsToInstall.length === 0) {
+      toast.info("All selected addons are already installed.");
       return;
     }
 
+    setConfirmInstall(false);
     setInstalling(true);
-    setInstallProgress({ completed: 0, failed: 0, total: toInstall.length });
+    setInstallProgress({ completed: 0, failed: 0, total: newAddonsToInstall.length });
 
     let completed = 0;
     let failed = 0;
 
-    for (const addon of toInstall) {
+    for (const addon of newAddonsToInstall) {
       try {
         const info = await invoke<EsouiAddonInfo>("resolve_esoui_addon", {
           input: String(addon.esouiId),
@@ -290,7 +332,7 @@ export function Packs({
       } catch {
         failed++;
       }
-      setInstallProgress({ completed, failed, total: toInstall.length });
+      setInstallProgress({ completed, failed, total: newAddonsToInstall.length });
     }
 
     setInstalling(false);
@@ -300,7 +342,7 @@ export function Packs({
       toast.warning(`Installed ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`);
     } else {
       toast.success(
-        `Installed ${completed} addon${completed !== 1 ? "s" : ""} from "${selectedPack.title}"`
+        `Installed ${completed} addon${completed !== 1 ? "s" : ""} from "${decodeHtml(selectedPack.title)}"`
       );
     }
     onRefresh();
@@ -328,9 +370,7 @@ export function Packs({
 
     // Optimistic: update list + detail
     setPacks((prev) => prev.map((p) => (p.id === packId ? applyVote(p) : p)));
-    if (selectedPack?.id === packId) {
-      setSelectedPack((prev) => (prev ? applyVote(prev) : prev));
-    }
+    setSelectedPack((prev) => (prev?.id === packId ? applyVote(prev) : prev));
 
     setVotingPacks((prev) => new Set(prev).add(packId));
     try {
@@ -342,9 +382,7 @@ export function Packs({
         voteCount: result.voteCount,
       });
       setPacks((prev) => prev.map((p) => (p.id === packId ? reconcile(p) : p)));
-      if (selectedPack?.id === packId) {
-        setSelectedPack((prev) => (prev ? reconcile(prev) : prev));
-      }
+      setSelectedPack((prev) => (prev?.id === packId ? reconcile(prev) : prev));
     } catch (e) {
       // Revert optimistic update
       const revert = (pack: Pack): Pack => {
@@ -356,9 +394,7 @@ export function Packs({
         };
       };
       setPacks((prev) => prev.map((p) => (p.id === packId ? revert(p) : p)));
-      if (selectedPack?.id === packId) {
-        setSelectedPack((prev) => (prev ? revert(prev) : prev));
-      }
+      setSelectedPack((prev) => (prev?.id === packId ? revert(prev) : prev));
       toast.error(String(e));
     } finally {
       setVotingPacks((prev) => {
@@ -419,7 +455,22 @@ export function Packs({
             installing={installing}
             installProgress={installProgress}
             selectedAddons={selectedAddons}
+            installedEsouiIds={installedEsouiIds}
+            votingPacks={votingPacks}
             onToggleAddon={handleToggleAddon}
+            onSelectAllOptional={(select) => {
+              if (!selectedPack) return;
+              setSelectedAddons((prev) => {
+                const next = new Set(prev);
+                for (const a of selectedPack.addons) {
+                  if (!a.required) {
+                    if (select) next.add(a.esouiId);
+                    else next.delete(a.esouiId);
+                  }
+                }
+                return next;
+              });
+            }}
             onVote={handleVote}
             authUser={authUser}
           />
@@ -434,10 +485,13 @@ export function Packs({
             onSearchChange={setSearchQuery}
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
+            sortMode={sortMode}
+            onSortChange={setSortMode}
             onSelectPack={handleSelectPack}
             onLoadMore={handleLoadMore}
             onRetry={() => loadPacks(searchQuery, 1)}
             onVote={handleVote}
+            votingPacks={votingPacks}
             authUser={authUser}
           />
         ) : (
@@ -477,22 +531,39 @@ export function Packs({
               <Button variant="outline" onClick={handleBack}>
                 Back
               </Button>
-              <Button
-                onClick={handleInstallPack}
-                disabled={installing || selectedAddons.size === 0}
-              >
-                {installing ? (
-                  <>
-                    <Loader2Icon className="size-4 animate-spin mr-1.5" />
-                    Installing...
-                  </>
-                ) : (
-                  <>
-                    <DownloadIcon className="size-4 mr-1.5" />
-                    Install {selectedAddons.size} Addon{selectedAddons.size !== 1 ? "s" : ""}
-                  </>
-                )}
-              </Button>
+              {confirmInstall ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground/60">
+                    Install {newAddonsToInstall.length} new addon
+                    {newAddonsToInstall.length !== 1 ? "s" : ""}?
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => setConfirmInstall(false)}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleInstallPack}>
+                    Confirm
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  onClick={() => setConfirmInstall(true)}
+                  disabled={installing || newAddonsToInstall.length === 0}
+                >
+                  {installing ? (
+                    <>
+                      <Loader2Icon className="size-4 animate-spin mr-1.5" />
+                      Installing...
+                    </>
+                  ) : (
+                    <>
+                      <DownloadIcon className="size-4 mr-1.5" />
+                      {newAddonsToInstall.length === 0
+                        ? "All Installed"
+                        : `Install ${newAddonsToInstall.length} New Addon${newAddonsToInstall.length !== 1 ? "s" : ""}`}
+                    </>
+                  )}
+                </Button>
+              )}
             </>
           ) : (
             <Button variant="outline" onClick={onClose}>
@@ -517,10 +588,13 @@ function PackListView({
   onSearchChange,
   typeFilter,
   onTypeFilterChange,
+  sortMode,
+  onSortChange,
   onSelectPack,
   onLoadMore,
   onRetry,
   onVote,
+  votingPacks,
   authUser,
 }: {
   packs: Pack[];
@@ -532,10 +606,13 @@ function PackListView({
   onSearchChange: (q: string) => void;
   typeFilter: PackTypeFilter;
   onTypeFilterChange: (f: PackTypeFilter) => void;
+  sortMode: SortOption;
+  onSortChange: (s: SortOption) => void;
   onSelectPack: (id: string) => void;
   onLoadMore: () => void;
   onRetry: () => void;
   onVote: (packId: string) => void;
+  votingPacks: Set<string>;
   authUser: AuthUser | null;
 }) {
   return (
@@ -555,7 +632,7 @@ function PackListView({
           value={typeFilter}
           onValueChange={(v) => v && onTypeFilterChange(v as PackTypeFilter)}
         >
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger className="w-[130px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -565,9 +642,19 @@ function PackListView({
             <SelectItem value="roster-pack">Roster Packs</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={sortMode} onValueChange={(v) => v && onSortChange(v as SortOption)}>
+          <SelectTrigger className="w-[110px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="votes">Top Voted</SelectItem>
+            <SelectItem value="newest">Newest</SelectItem>
+            <SelectItem value="updated">Updated</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-[400px]">
+      <div className="flex-1 overflow-y-auto space-y-2 min-h-0 max-h-[400px] px-1 -mx-1 py-1 -my-1">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="inline-block size-6 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
@@ -603,12 +690,20 @@ function PackListView({
             const accent = PACK_TYPE_ACCENT[pack.packType] ?? PACK_TYPE_ACCENT["addon-pack"];
             const pillColor = PACK_TYPE_PILL_COLOR[pack.packType] ?? "muted";
             return (
-              <button
+              <div
                 key={pack.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectPack(pack.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelectPack(pack.id);
+                  }
+                }}
                 className={cn(
                   "group w-full text-left rounded-xl border border-white/[0.06] p-3",
-                  "border-l-[3px] transition-all duration-200",
+                  "border-l-[3px] transition-all duration-200 cursor-pointer",
                   accent.border,
                   accent.bg,
                   accent.hoverBg,
@@ -634,11 +729,13 @@ function PackListView({
                       e.stopPropagation();
                       onVote(pack.id);
                     }}
+                    disabled={votingPacks.has(pack.id)}
                     title={
                       authUser ? (pack.userVoted ? "Remove vote" : "Upvote") : "Sign in to vote"
                     }
                     className={cn(
                       "group/vote relative flex flex-col items-center gap-0.5 text-xs font-semibold rounded-lg px-2 py-1.5 transition-all duration-200 border shrink-0",
+                      votingPacks.has(pack.id) && "opacity-60 pointer-events-none",
                       pack.userVoted
                         ? "text-[#c4a44a] bg-[#c4a44a]/[0.12] border-[#c4a44a]/30 hover:bg-[#c4a44a]/[0.2] shadow-[0_0_8px_rgba(196,164,74,0.15)]"
                         : "text-muted-foreground/50 bg-white/[0.03] border-white/[0.06] hover:text-[#c4a44a] hover:border-[#c4a44a]/20 hover:bg-[#c4a44a]/[0.06]"
@@ -688,13 +785,13 @@ function PackListView({
                           "bg-white/[0.08] text-muted-foreground/60"
                         )}
                       >
-                        {decodeHtml(pack.authorName).charAt(0)}
+                        {[...decodeHtml(pack.authorName)][0]}
                       </span>
                       {decodeHtml(pack.authorName)}
                     </span>
                   )}
                 </div>
-              </button>
+              </div>
             );
           })
         )}
@@ -732,7 +829,10 @@ function PackDetailView({
   installing,
   installProgress,
   selectedAddons,
+  installedEsouiIds,
+  votingPacks,
   onToggleAddon,
+  onSelectAllOptional,
   onVote,
   authUser,
 }: {
@@ -741,7 +841,10 @@ function PackDetailView({
   installing: boolean;
   installProgress: { completed: number; failed: number; total: number } | null;
   selectedAddons: Set<number>;
+  installedEsouiIds: Set<number>;
+  votingPacks: Set<string>;
   onToggleAddon: (esouiId: number, required: boolean) => void;
+  onSelectAllOptional: (select: boolean) => void;
   onVote: (packId: string) => void;
   authUser: AuthUser | null;
 }) {
@@ -758,7 +861,9 @@ function PackDetailView({
 
   return (
     <div className="flex flex-col gap-3 overflow-y-auto max-h-[400px]">
-      <p className="text-sm text-muted-foreground">{decodeHtml(pack.description)}</p>
+      {pack.description && (
+        <p className="text-sm text-muted-foreground">{decodeHtml(pack.description)}</p>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <InfoPill color="muted">{TYPE_LABELS[pack.packType] ?? pack.packType}</InfoPill>
@@ -772,11 +877,13 @@ function PackDetailView({
         )}
         <button
           onClick={() => onVote(pack.id)}
+          disabled={votingPacks.has(pack.id)}
           title={
             authUser ? (pack.userVoted ? "Remove vote" : "Upvote this pack") : "Sign in to vote"
           }
           className={cn(
             "group/vote relative flex items-center gap-1.5 text-sm font-medium rounded-full px-3 py-1.5 transition-all duration-200 border ml-auto",
+            votingPacks.has(pack.id) && "opacity-60 pointer-events-none",
             pack.userVoted
               ? "text-[#c4a44a] bg-[#c4a44a]/[0.12] border-[#c4a44a]/30 hover:bg-[#c4a44a]/[0.2] shadow-[0_0_12px_rgba(196,164,74,0.15)]"
               : "text-muted-foreground/60 bg-white/[0.03] border-white/[0.08] hover:text-[#c4a44a] hover:border-[#c4a44a]/20 hover:bg-[#c4a44a]/[0.06]"
@@ -830,6 +937,7 @@ function PackDetailView({
                 addon={addon}
                 checked={selectedAddons.has(addon.esouiId)}
                 locked
+                isInstalled={installedEsouiIds.has(addon.esouiId)}
                 onToggle={() => onToggleAddon(addon.esouiId, true)}
               />
             ))}
@@ -842,7 +950,17 @@ function PackDetailView({
         <div>
           <div className="flex items-center justify-between mb-2">
             <SectionHeader>Optional</SectionHeader>
-            <span className="text-[10px] text-sky-400/60 font-medium">Click to add</span>
+            {(() => {
+              const allSelected = optionalAddons.every((a) => selectedAddons.has(a.esouiId));
+              return (
+                <button
+                  onClick={() => onSelectAllOptional(!allSelected)}
+                  className="text-[10px] text-sky-400/60 font-medium hover:text-sky-400 transition-colors"
+                >
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
+              );
+            })()}
           </div>
           <div className="space-y-1">
             {optionalAddons.map((addon) => (
@@ -851,6 +969,7 @@ function PackDetailView({
                 addon={addon}
                 checked={selectedAddons.has(addon.esouiId)}
                 locked={false}
+                isInstalled={installedEsouiIds.has(addon.esouiId)}
                 onToggle={() => onToggleAddon(addon.esouiId, false)}
               />
             ))}
@@ -865,11 +984,13 @@ function AddonRow({
   addon,
   checked,
   locked,
+  isInstalled,
   onToggle,
 }: {
   addon: PackAddonEntry;
   checked: boolean;
   locked: boolean;
+  isInstalled: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -908,8 +1029,11 @@ function AddonRow({
                 : "border-white/20 bg-white/[0.03] group-hover:border-sky-400/40 group-hover:bg-sky-400/[0.06]"
           )}
         >
-          {checked && <CheckIcon className="size-3.5 text-[#c4a44a]" />}
-          {locked && <CheckIcon className="size-3.5 text-[#c4a44a]/70" />}
+          {(checked || locked) && (
+            <CheckIcon
+              className={cn("size-3.5", locked ? "text-[#c4a44a]/70" : "text-[#c4a44a]")}
+            />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -928,6 +1052,11 @@ function AddonRow({
             {locked && (
               <span className="text-[9px] font-semibold uppercase tracking-wider text-[#c4a44a]/50 shrink-0">
                 Required
+              </span>
+            )}
+            {isInstalled && (
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-emerald-400/60 shrink-0">
+                Installed
               </span>
             )}
             {!locked && !checked && (
@@ -963,7 +1092,7 @@ interface CreateViewProps {
   packType: string;
   onPackTypeChange: (v: string) => void;
   selectedTags: string[];
-  onTagsChange: (v: string[]) => void;
+  onTagsChange: (v: string[] | ((prev: string[]) => string[])) => void;
   addons: PackAddonEntry[];
   onAddonsChange: (v: PackAddonEntry[] | ((prev: PackAddonEntry[]) => PackAddonEntry[])) => void;
   onPublished: () => void;
@@ -993,6 +1122,7 @@ function PackCreateView({
   const [searchResults, setSearchResults] = useState<EsouiSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const createSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createSearchSeqRef = useRef(0);
 
   // Clean up search timer on unmount
   useEffect(() => {
@@ -1005,11 +1135,11 @@ function PackCreateView({
   const [installedFilter, setInstalledFilter] = useState("");
 
   const handleTagToggle = (tag: string) => {
-    if (selectedTags.includes(tag)) {
-      setSelectedTags(selectedTags.filter((t) => t !== tag));
-    } else if (selectedTags.length < 5) {
-      setSelectedTags([...selectedTags, tag]);
-    }
+    setSelectedTags((prev) => {
+      if (prev.includes(tag)) return prev.filter((t) => t !== tag);
+      if (prev.length >= 5) return prev;
+      return [...prev, tag];
+    });
   };
 
   const handleSearchChange = (query: string) => {
@@ -1022,34 +1152,48 @@ function PackCreateView({
     }
     setSearching(true);
     createSearchTimerRef.current = setTimeout(async () => {
+      const seq = ++createSearchSeqRef.current;
       try {
         const results = await invoke<EsouiSearchResult[]>("search_esoui_addons", {
           query: query.trim(),
         });
+        if (seq !== createSearchSeqRef.current) return;
         setSearchResults(results);
       } catch {
+        if (seq !== createSearchSeqRef.current) return;
         setSearchResults([]);
       } finally {
-        setSearching(false);
+        if (seq === createSearchSeqRef.current) {
+          setSearching(false);
+        }
       }
     }, 400);
   };
 
   const handleAddAddon = (entry: PackAddonEntry) => {
-    if (addons.some((a) => a.esouiId === entry.esouiId)) {
+    let added = false;
+    setAddons((prev) => {
+      if (prev.some((a) => a.esouiId === entry.esouiId)) return prev;
+      added = true;
+      return [...prev, entry];
+    });
+    // Toast after updater so we know the outcome
+    // React processes the updater synchronously within setState, so `added` is set by here
+    if (added) {
+      toast.success(`Added "${entry.name}"`);
+    } else {
       toast.error(`"${entry.name}" is already in the pack.`);
-      return;
     }
-    setAddons([...addons, entry]);
-    toast.success(`Added "${entry.name}"`);
   };
 
   const handleRemoveAddon = (esouiId: number) => {
-    setAddons(addons.filter((a) => a.esouiId !== esouiId));
+    setAddons((prev) => prev.filter((a) => a.esouiId !== esouiId));
   };
 
   const handleToggleRequired = (esouiId: number) => {
-    setAddons(addons.map((a) => (a.esouiId === esouiId ? { ...a, required: !a.required } : a)));
+    setAddons((prev) =>
+      prev.map((a) => (a.esouiId === esouiId ? { ...a, required: !a.required } : a))
+    );
   };
 
   const [publishing, setPublishing] = useState(false);
@@ -1114,14 +1258,18 @@ function PackCreateView({
   };
 
   // Filtered installed addons (only those with ESOUI IDs)
-  const filteredInstalled = installedAddons
-    .filter((a) => a.esouiId && a.esouiId > 0)
-    .filter(
-      (a) =>
-        !installedFilter ||
-        a.title.toLowerCase().includes(installedFilter.toLowerCase()) ||
-        a.folderName.toLowerCase().includes(installedFilter.toLowerCase())
-    );
+  const filteredInstalled = useMemo(
+    () =>
+      installedAddons
+        .filter((a) => a.esouiId && a.esouiId > 0)
+        .filter(
+          (a) =>
+            !installedFilter ||
+            a.title.toLowerCase().includes(installedFilter.toLowerCase()) ||
+            a.folderName.toLowerCase().includes(installedFilter.toLowerCase())
+        ),
+    [installedAddons, installedFilter]
+  );
 
   const canProceed = !!title.trim();
 
