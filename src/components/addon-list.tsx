@@ -344,6 +344,11 @@ export function AddonList({
                           {addon.tags.includes("favorite") && (
                             <span className="text-[#c4a44a] mr-1">{"\u2605"}</span>
                           )}
+                          {addon.isLibrary && (
+                            <span className="text-emerald-400 mr-1 text-[10px] font-medium uppercase tracking-wide">
+                              LIB
+                            </span>
+                          )}
                           {addon.title}
                         </div>
                         <div className="mt-0.5 flex items-center gap-1.5">
@@ -362,14 +367,6 @@ export function AddonList({
                               className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
                             >
                               Update
-                            </Badge>
-                          )}
-                          {addon.isLibrary && (
-                            <Badge
-                              variant="outline"
-                              className="border-emerald-400/20 bg-emerald-400/[0.04] text-emerald-400 text-[10px]"
-                            >
-                              LIB
                             </Badge>
                           )}
                           {addon.missingDependencies.length > 0 && (
