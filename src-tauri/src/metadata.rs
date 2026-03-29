@@ -12,6 +12,15 @@ pub struct AddonMetadata {
     pub installed_version: String,
     pub download_url: String,
     pub installed_at: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// ESOUI last-updated timestamp in epoch milliseconds (from the API).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub esoui_last_update: u64,
+}
+
+fn is_zero(v: &u64) -> bool {
+    *v == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,6 +169,26 @@ pub fn record_install(
     version: &str,
     download_url: &str,
 ) {
+    record_install_ext(store, folder_name, esoui_id, version, download_url, 0);
+}
+
+pub fn record_install_ext(
+    store: &mut MetadataStore,
+    folder_name: &str,
+    esoui_id: u32,
+    version: &str,
+    download_url: &str,
+    esoui_last_update: u64,
+) {
+    let existing = store.addons.get(folder_name);
+    // Preserve existing tags when re-recording an install (e.g. update)
+    let existing_tags = existing.map(|m| m.tags.clone()).unwrap_or_default();
+    // Keep existing last_update if new one is 0
+    let last_update = if esoui_last_update == 0 {
+        existing.map(|m| m.esoui_last_update).unwrap_or(0)
+    } else {
+        esoui_last_update
+    };
     store.addons.insert(
         folder_name.to_string(),
         AddonMetadata {
@@ -172,6 +201,8 @@ pub fn record_install(
                     .unwrap_or_default()
                     .as_secs(),
             ),
+            tags: existing_tags,
+            esoui_last_update: last_update,
         },
     );
 }

@@ -1,6 +1,7 @@
 use regex::Regex;
 use scraper::{Html, Selector};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io;
 use std::sync::OnceLock;
 use tempfile::NamedTempFile;
@@ -60,6 +61,7 @@ pub struct EsouiAddonInfo {
     pub title: String,
     pub version: String,
     pub download_url: String,
+    pub updated: String,
 }
 
 pub fn parse_esoui_input(input: &str) -> Result<u32, String> {
@@ -163,6 +165,10 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
         .unwrap_or_else(|| format!("Addon #{}", id));
 
     let version = extract_version(&document);
+
+    // Extract "Updated" date from the info page table (same page, no extra request)
+    let updated = extract_table_field(&document, "Updated");
+
     let download_url = fetch_download_url(client, id)?;
 
     Ok(EsouiAddonInfo {
@@ -170,7 +176,25 @@ pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
         title,
         version,
         download_url,
+        updated,
     })
+}
+
+/// Extract a single field value from the ESOUI info page metadata table.
+fn extract_table_field(document: &Html, field_name: &str) -> String {
+    let tr_sel = Selector::parse("tr").unwrap();
+    let td_sel = Selector::parse("td").unwrap();
+    for tr in document.select(&tr_sel) {
+        let tds: Vec<_> = tr.select(&td_sel).collect();
+        if tds.len() >= 2 {
+            let label = tds[0].text().collect::<String>();
+            let label = label.trim().trim_end_matches(':');
+            if label == field_name {
+                return tds[1].text().collect::<String>().trim().to_string();
+            }
+        }
+    }
+    String::new()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -645,4 +669,93 @@ pub fn download_addon(url: &str) -> Result<NamedTempFile, String> {
         .map_err(|e| format!("Failed to write download to temp file: {}", e))?;
 
     Ok(tmp)
+}
+
+// ── ESOUI REST API (api.mmoui.com) ──────────────────────────────────────────
+
+/// A single addon entry from the ESOUI filelist API.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiFileEntry {
+    pub id: u32,
+    pub version: String,
+    pub last_update: u64, // epoch millis
+    pub title: String,
+    pub author: String,
+    pub file_info_uri: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub addons: Vec<ApiAddonPath>,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::deserialize(deserializer)?.unwrap_or_default())
+}
+
+/// Sub-addon path entry within an ESOUI file listing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApiAddonPath {
+    pub path: String,
+}
+
+/// Lookup entry for a resolved addon from the API.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiAddonLookup {
+    pub esoui_id: u32,
+    pub title: String,
+    pub version: String,
+    pub author: String,
+    pub last_update: u64, // epoch millis
+    pub file_info_uri: String,
+}
+
+/// Fetch the full ESOUI filelist and build a lookup map keyed by addon folder path.
+///
+/// Single HTTP request returns ~4000 addons with all their folder paths,
+/// versions, and last-updated timestamps. Far more reliable and faster than
+/// per-addon HTML scraping for bulk operations.
+pub fn fetch_filelist_lookup() -> Result<HashMap<String, ApiAddonLookup>, String> {
+    let client = http_client();
+    let url = "https://api.mmoui.com/v4/game/ESO/filelist.json";
+    let response = client.get(url).send().map_err(|e| {
+        if e.is_connect() || e.is_timeout() {
+            "Could not reach ESOUI API. Check your internet connection.".to_string()
+        } else {
+            format!("ESOUI API request failed: {}", e)
+        }
+    })?;
+
+    if !response.status().is_success() {
+        return Err(format!("ESOUI API returned HTTP {}", response.status()));
+    }
+
+    let entries: Vec<ApiFileEntry> = response
+        .json()
+        .map_err(|e| format!("Failed to parse ESOUI API response: {}", e))?;
+
+    let mut map = HashMap::new();
+    for entry in &entries {
+        let lookup = ApiAddonLookup {
+            esoui_id: entry.id,
+            title: entry.title.clone(),
+            version: entry.version.clone(),
+            author: entry.author.clone(),
+            last_update: entry.last_update,
+            file_info_uri: entry.file_info_uri.clone(),
+        };
+        // Map each addon folder path to its parent file entry
+        for addon in &entry.addons {
+            // Only use the top-level folder name (before any '/')
+            let folder = addon.path.split('/').next().unwrap_or(&addon.path);
+            // Don't overwrite if already mapped (first match wins — the primary entry)
+            map.entry(folder.to_string())
+                .or_insert_with(|| lookup.clone());
+        }
+    }
+
+    Ok(map)
 }

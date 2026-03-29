@@ -34,6 +34,8 @@ pub struct AddonManifest {
     pub optional_depends_on: Vec<Dependency>,
     pub missing_dependencies: Vec<String>,
     pub esoui_id: Option<u32>,
+    pub tags: Vec<String>,
+    pub esoui_last_update: u64,
 }
 
 fn parse_dependencies(value: &str) -> Vec<Dependency> {
@@ -161,6 +163,8 @@ pub fn parse_manifest(folder_name: &str, manifest_path: &Path) -> Option<AddonMa
         optional_depends_on,
         missing_dependencies: Vec::new(),
         esoui_id: None,
+        tags: Vec::new(),
+        esoui_last_update: 0,
     })
 }
 

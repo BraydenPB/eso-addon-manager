@@ -50,6 +50,11 @@ function App() {
   const [updateResults, setUpdateResults] = useState<UpdateCheckResult[]>([]);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updatingAll, setUpdatingAll] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<{
+    completed: number;
+    failed: number;
+    total: number;
+  } | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
 
@@ -116,20 +121,31 @@ function App() {
 
       if (autoUpdate && updates.length > 0) {
         toast.info(`Auto-updating ${updates.length} addon${updates.length > 1 ? "s" : ""}...`);
-        let updated = 0;
-        for (const update of updates) {
-          try {
-            await invoke<InstallResult>("update_addon", {
-              addonsPath: path,
-              esouiId: update.esouiId,
-            });
-            updated++;
-          } catch {
-            // Continue
+        setUpdatingAll(true);
+        setUpdateProgress({ completed: 0, failed: 0, total: updates.length });
+        let completed = 0;
+        let failed = 0;
+        const concurrency = 3;
+        for (let i = 0; i < updates.length; i += concurrency) {
+          const batch = updates.slice(i, i + concurrency);
+          const results = await Promise.allSettled(
+            batch.map((u) =>
+              invoke<InstallResult>("update_addon", {
+                addonsPath: path,
+                esouiId: u.esouiId,
+              })
+            )
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled") completed++;
+            else failed++;
           }
+          setUpdateProgress({ completed, failed, total: updates.length });
         }
-        if (updated > 0) {
-          toast.success(`Auto-updated ${updated} addon${updated !== 1 ? "s" : ""}`);
+        setUpdatingAll(false);
+        setUpdateProgress(null);
+        if (completed > 0) {
+          toast.success(`Auto-updated ${completed} addon${completed !== 1 ? "s" : ""}`);
         }
       } else if (updates.length > 0) {
         toast.info(`${updates.length} update${updates.length > 1 ? "s" : ""} available`);
@@ -270,6 +286,21 @@ function App() {
     }
   };
 
+  const handleTagsChange = useCallback(
+    async (folderName: string, tags: string[]) => {
+      try {
+        await invoke("set_addon_tags", { addonsPath, folderName, tags });
+        // Update local state without a full rescan
+        setAddons((prev) => prev.map((a) => (a.folderName === folderName ? { ...a, tags } : a)));
+        // Keep selectedAddon in sync
+        setSelectedAddon((prev) => (prev?.folderName === folderName ? { ...prev, tags } : prev));
+      } catch (e) {
+        toast.error(`Failed to save tags: ${e}`);
+      }
+    },
+    [addonsPath]
+  );
+
   // Lightweight refresh after a single addon update — just rescan
   // manifests and clear that addon's update result without re-checking
   // every addon against ESOUI (which takes 15+ seconds).
@@ -304,26 +335,48 @@ function App() {
 
   const updatesAvailable = useMemo(() => updateResults.filter((r) => r.hasUpdate), [updateResults]);
 
-  const handleUpdateAll = async () => {
+  const runBatchUpdates = async (updates: UpdateCheckResult[]) => {
     setUpdatingAll(true);
-    let updated = 0;
-    for (const update of updatesAvailable) {
-      try {
-        await invoke<InstallResult>("update_addon", {
-          addonsPath,
-          esouiId: update.esouiId,
-        });
-        updated++;
-      } catch {
-        // Continue updating others even if one fails
+    setUpdateProgress({ completed: 0, failed: 0, total: updates.length });
+
+    let completed = 0;
+    let failed = 0;
+    const concurrency = 3;
+
+    // Process updates in batches of `concurrency`
+    for (let i = 0; i < updates.length; i += concurrency) {
+      const batch = updates.slice(i, i + concurrency);
+      const results = await Promise.allSettled(
+        batch.map((update) =>
+          invoke<InstallResult>("update_addon", {
+            addonsPath,
+            esouiId: update.esouiId,
+          })
+        )
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") completed++;
+        else failed++;
       }
+      setUpdateProgress({ completed, failed, total: updates.length });
     }
+
     setUpdatingAll(false);
-    toast.success(`Updated ${updated} addon${updated !== 1 ? "s" : ""}`);
-    // Just rescan manifests and clear update results — don't re-check ESOUI
+    setUpdateProgress(null);
+
+    if (failed > 0) {
+      toast.success(`Updated ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`);
+    } else {
+      toast.success(`Updated ${completed} addon${completed !== 1 ? "s" : ""}`);
+    }
     scanAddons(addonsPath);
-    setUpdateResults([]);
+    setUpdateResults((prev) => {
+      const updatedIds = new Set(updates.map((u) => u.esouiId));
+      return prev.filter((r) => !updatedIds.has(r.esouiId));
+    });
   };
+
+  const handleUpdateAll = () => runBatchUpdates(updatesAvailable);
 
   // Batch operations
   const handleToggleSelect = (folderName: string) => {
@@ -363,33 +416,17 @@ function App() {
       toast.info("No selected addons have updates available");
       return;
     }
-    setUpdatingAll(true);
-    let updated = 0;
-    for (const update of toUpdate) {
-      try {
-        await invoke<InstallResult>("update_addon", {
-          addonsPath,
-          esouiId: update.esouiId,
-        });
-        updated++;
-      } catch {
-        // Continue
-      }
-    }
-    setUpdatingAll(false);
-    toast.success(`Updated ${updated} addon${updated !== 1 ? "s" : ""}`);
+    await runBatchUpdates(toUpdate);
     setSelectedFolders(new Set());
-    scanAddons(addonsPath);
-    setUpdateResults((prev) => {
-      const updatedIds = new Set(toUpdate.map((u) => u.esouiId));
-      return prev.filter((r) => !updatedIds.has(r.esouiId));
-    });
   };
 
   const updatesSet = useMemo(
     () => new Set(updateResults.filter((r) => r.hasUpdate).map((r) => r.folderName)),
     [updateResults]
   );
+
+  // Active tag filter (when filterMode is "tagged", filter by this tag)
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
 
   const filteredAddons = useMemo(
     () =>
@@ -400,7 +437,8 @@ function App() {
             const matchesSearch =
               addon.title.toLowerCase().includes(q) ||
               addon.folderName.toLowerCase().includes(q) ||
-              addon.author.toLowerCase().includes(q);
+              addon.author.toLowerCase().includes(q) ||
+              addon.tags.some((t) => t.toLowerCase().includes(q));
             if (!matchesSearch) return false;
           }
           switch (filterMode) {
@@ -412,6 +450,12 @@ function App() {
               return updatesSet.has(addon.folderName);
             case "missing-deps":
               return addon.missingDependencies.length > 0;
+            case "favorites":
+              return addon.tags.includes("favorite");
+            case "tagged":
+              return activeTagFilter ? addon.tags.includes(activeTagFilter) : addon.tags.length > 0;
+            case "untracked":
+              return !addon.esouiId;
             default:
               return true;
           }
@@ -425,7 +469,7 @@ function App() {
               return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
           }
         }),
-    [addons, searchQuery, filterMode, sortMode, updatesSet]
+    [addons, searchQuery, filterMode, sortMode, updatesSet, activeTagFilter]
   );
 
   const selectedUpdateResult = useMemo(
@@ -574,14 +618,35 @@ function App() {
       />
 
       {/* Update banner */}
-      {updatesAvailable.length > 0 && !updatingAll && (
-        <div className="flex items-center justify-between px-5 py-2 border-b border-[#c4a44a]/15 bg-gradient-to-r from-[#c4a44a]/[0.06] via-[#c4a44a]/[0.03] to-transparent backdrop-blur-sm animate-[slide-down_0.3s_ease-out]">
-          <span className="text-sm text-[#c4a44a] font-medium">
-            {updatesAvailable.length} update{updatesAvailable.length > 1 ? "s" : ""} available
-          </span>
-          <Button onClick={handleUpdateAll} size="sm">
-            Update All
-          </Button>
+      {(updatesAvailable.length > 0 || updatingAll) && (
+        <div className="border-b border-[#c4a44a]/15 bg-gradient-to-r from-[#c4a44a]/[0.06] via-[#c4a44a]/[0.03] to-transparent backdrop-blur-sm animate-[slide-down_0.3s_ease-out]">
+          <div className="flex items-center justify-between px-5 py-2">
+            {updatingAll && updateProgress ? (
+              <span className="text-sm text-[#c4a44a] font-medium">
+                Updating {updateProgress.completed + updateProgress.failed}/{updateProgress.total}
+                {updateProgress.failed > 0 && (
+                  <span className="text-red-400 ml-1">({updateProgress.failed} failed)</span>
+                )}
+              </span>
+            ) : (
+              <span className="text-sm text-[#c4a44a] font-medium">
+                {updatesAvailable.length} update{updatesAvailable.length > 1 ? "s" : ""} available
+              </span>
+            )}
+            <Button onClick={handleUpdateAll} size="sm" disabled={updatingAll}>
+              {updatingAll ? "Updating..." : "Update All"}
+            </Button>
+          </div>
+          {updatingAll && updateProgress && (
+            <div className="h-0.5 bg-white/[0.06]">
+              <div
+                className="h-full bg-[#c4a44a] transition-all duration-300 ease-out"
+                style={{
+                  width: `${((updateProgress.completed + updateProgress.failed) / updateProgress.total) * 100}%`,
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -599,6 +664,8 @@ function App() {
           onSortChange={handleSortChange}
           filterMode={filterMode}
           onFilterChange={handleFilterChange}
+          activeTagFilter={activeTagFilter}
+          onActiveTagFilterChange={setActiveTagFilter}
           selectedFolders={selectedFolders}
           onToggleSelect={handleToggleSelect}
           viewMode={viewMode}
@@ -622,6 +689,7 @@ function App() {
             }}
             updateResult={selectedUpdateResult}
             onAddonUpdated={handleAddonUpdated}
+            onTagsChange={handleTagsChange}
           />
         ) : (
           <DiscoverDetail

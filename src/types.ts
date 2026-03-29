@@ -16,6 +16,8 @@ export interface AddonManifest {
   optionalDependsOn: Dependency[];
   missingDependencies: string[];
   esouiId: number | null;
+  tags: string[];
+  esouiLastUpdate: number;
 }
 
 export interface EsouiAddonInfo {
@@ -23,6 +25,7 @@ export interface EsouiAddonInfo {
   title: string;
   version: string;
   downloadUrl: string;
+  updated: string;
 }
 
 export interface InstallResult {
@@ -112,7 +115,19 @@ export interface MinionMigrationResult {
 
 // App-level UI state types
 export type SortMode = "name" | "author";
-export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-deps";
+export type FilterMode =
+  | "all"
+  | "addons"
+  | "libraries"
+  | "outdated"
+  | "missing-deps"
+  | "favorites"
+  | "tagged"
+  | "untracked";
+
+// Predefined tags users can apply to addons
+export const PRESET_TAGS = ["favorite", "testing", "broken", "essential", "cosmetic"] as const;
+export type PresetTag = (typeof PRESET_TAGS)[number];
 export type ViewMode = "installed" | "discover";
 export type DiscoverTab = "search" | "categories" | "url";
 

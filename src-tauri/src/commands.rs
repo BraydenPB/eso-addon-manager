@@ -138,6 +138,7 @@ fn determine_primary_folder(installed_folders: &[String], esoui_title: &str) -> 
 /// Record metadata for a set of installed folders. The primary folder gets
 /// the esoui_id and version from ESOUI; secondary folders get id 0 and
 /// their local manifest version.
+#[allow(clippy::too_many_arguments)]
 fn record_installed_folders(
     store: &mut metadata::MetadataStore,
     addons_dir: &Path,
@@ -146,6 +147,7 @@ fn record_installed_folders(
     esoui_version: &str,
     esoui_title: &str,
     download_url: &str,
+    esoui_last_update: u64,
 ) {
     let primary = determine_primary_folder(installed_folders, esoui_title);
     for folder in installed_folders {
@@ -155,12 +157,13 @@ fn record_installed_folders(
         } else {
             read_local_version(addons_dir, folder)
         };
-        metadata::record_install(
+        metadata::record_install_ext(
             store,
             folder,
             if is_primary { esoui_id } else { 0 },
             &version,
             download_url,
+            if is_primary { esoui_last_update } else { 0 },
         );
     }
 }
@@ -336,6 +339,8 @@ fn scan_installed_addons_blocking(addons_path: &str) -> Result<Vec<AddonManifest
 
         if let Some(meta) = store.addons.get(&addon.folder_name) {
             addon.esoui_id = Some(meta.esoui_id);
+            addon.tags = meta.tags.clone();
+            addon.esoui_last_update = meta.esoui_last_update;
         }
     }
 
@@ -345,14 +350,52 @@ fn scan_installed_addons_blocking(addons_path: &str) -> Result<Vec<AddonManifest
 }
 
 #[tauri::command]
-pub fn resolve_esoui_addon(input: String) -> Result<EsouiAddonInfo, String> {
-    let id = esoui::parse_esoui_input(&input)?;
-    esoui::fetch_addon_info(id)
+pub async fn set_addon_tags(
+    addons_path: String,
+    folder_name: String,
+    tags: Vec<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let addons_dir = PathBuf::from(&addons_path);
+        let mut store = metadata::load_metadata(&addons_dir);
+        match store.addons.get_mut(&folder_name) {
+            Some(meta) => meta.tags = tags,
+            None => {
+                // Create a minimal entry for untracked addons so tags can be saved
+                store.addons.insert(
+                    folder_name.clone(),
+                    metadata::AddonMetadata {
+                        esoui_id: 0,
+                        installed_version: String::new(),
+                        download_url: String::new(),
+                        installed_at: String::new(),
+                        tags,
+                        esoui_last_update: 0,
+                    },
+                );
+            }
+        }
+        metadata::save_metadata(&addons_dir, &store)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn fetch_esoui_detail(esoui_id: u32) -> Result<EsouiAddonDetail, String> {
-    esoui::fetch_addon_detail(esoui_id)
+pub async fn resolve_esoui_addon(input: String) -> Result<EsouiAddonInfo, String> {
+    tokio::task::spawn_blocking(move || {
+        let id = esoui::parse_esoui_input(&input)?;
+        esoui::fetch_addon_info(id)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn fetch_esoui_detail(esoui_id: u32) -> Result<EsouiAddonDetail, String> {
+    tokio::task::spawn_blocking(move || esoui::fetch_addon_detail(esoui_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -366,7 +409,7 @@ pub async fn search_esoui_addons(query: String) -> Result<Vec<EsouiSearchResult>
 }
 
 #[tauri::command]
-pub fn install_addon(
+pub async fn install_addon(
     state: tauri::State<'_, AllowedAddonsPath>,
     addons_path: String,
     download_url: String,
@@ -382,25 +425,46 @@ pub fn install_addon(
         return Err("Invalid download URL: only ESOUI download links are allowed.".to_string());
     }
 
-    let tmp_file = esoui::download_addon(&download_url)?;
-    let installed_folders = installer::extract_addon_zip(tmp_file.path(), &addons_dir)?;
+    tokio::task::spawn_blocking(move || {
+        install_addon_blocking(
+            &addons_dir,
+            &download_url,
+            esoui_id,
+            &esoui_title,
+            &esoui_version,
+        )
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
 
-    let mut store = metadata::load_metadata(&addons_dir);
+fn install_addon_blocking(
+    addons_dir: &Path,
+    download_url: &str,
+    esoui_id: u32,
+    esoui_title: &str,
+    esoui_version: &str,
+) -> Result<InstallResult, String> {
+    let tmp_file = esoui::download_addon(download_url)?;
+    let installed_folders = installer::extract_addon_zip(tmp_file.path(), addons_dir)?;
+
+    let mut store = metadata::load_metadata(addons_dir);
 
     // Only the primary folder gets the esoui_id so that check_for_updates
     // compares versions correctly. Secondary folders get esoui_id 0.
     record_installed_folders(
         &mut store,
-        &addons_dir,
+        addons_dir,
         &installed_folders,
         esoui_id,
-        &esoui_version,
-        &esoui_title,
-        &download_url,
+        esoui_version,
+        esoui_title,
+        download_url,
+        0, // esoui_last_update will be populated during next update check
     );
 
     let mut all_installed: HashSet<String> = HashSet::new();
-    if let Ok(entries) = fs::read_dir(&addons_dir) {
+    if let Ok(entries) = fs::read_dir(addons_dir) {
         for entry in entries.flatten() {
             if entry.path().is_dir() {
                 if let Some(name) = entry.file_name().to_str() {
@@ -413,7 +477,7 @@ pub fn install_addon(
     let mut missing_deps: Vec<String> = Vec::new();
     for folder in &installed_folders {
         let addon =
-            find_manifest(&addons_dir, folder).and_then(|p| manifest::parse_manifest(folder, &p));
+            find_manifest(addons_dir, folder).and_then(|p| manifest::parse_manifest(folder, &p));
         if let Some(addon) = addon {
             for dep in &addon.depends_on {
                 if !all_installed.contains(&dep.name) && !missing_deps.contains(&dep.name) {
@@ -428,7 +492,7 @@ pub fn install_addon(
     let mut skipped_deps: Vec<String> = Vec::new();
 
     for dep_name in &missing_deps {
-        match try_install_dep(dep_name, &addons_dir, &mut store) {
+        match try_install_dep(dep_name, addons_dir, &mut store) {
             Ok(dep_folders) => {
                 for f in &dep_folders {
                     all_installed.insert(f.clone());
@@ -440,7 +504,7 @@ pub fn install_addon(
         }
     }
 
-    metadata::save_metadata(&addons_dir, &store)?;
+    metadata::save_metadata(addons_dir, &store)?;
 
     Ok(InstallResult {
         installed_folders,
@@ -507,13 +571,14 @@ fn check_for_updates_blocking(addons_path: &str) -> Result<Vec<UpdateCheckResult
     let mut store = metadata::load_metadata(&addons_dir);
     let mut metadata_changed = false;
 
+    // Fetch the full ESOUI filelist in a single API call
+    let api_lookup = esoui::fetch_filelist_lookup()?;
+
     let mut results: Vec<UpdateCheckResult> = Vec::new();
 
-    // Snapshot keys to avoid borrow conflict with mutable store
     let folder_names: Vec<String> = store.addons.keys().cloned().collect();
 
     for folder_name in &folder_names {
-        // Only check addons that still exist on disk
         if !addons_dir.join(folder_name).is_dir() {
             continue;
         }
@@ -523,61 +588,66 @@ fn check_for_updates_blocking(addons_path: &str) -> Result<Vec<UpdateCheckResult
             None => continue,
         };
 
-        // Skip bundled secondary folders (esoui_id 0) — they don't have
-        // their own ESOUI page and shouldn't be update-checked.
+        // Skip bundled secondary folders (esoui_id 0)
         if meta.esoui_id == 0 {
             continue;
         }
 
-        match esoui::fetch_addon_info(meta.esoui_id) {
-            Ok(info) => {
-                // Normalize versions: strip leading "v"/"V" and trim whitespace
-                let local_ver = meta
-                    .installed_version
-                    .trim()
-                    .strip_prefix('v')
-                    .or_else(|| meta.installed_version.trim().strip_prefix('V'))
-                    .unwrap_or(meta.installed_version.trim());
-                let remote_ver = info
-                    .version
-                    .trim()
-                    .strip_prefix('v')
-                    .or_else(|| info.version.trim().strip_prefix('V'))
-                    .unwrap_or(info.version.trim());
+        // Look up the addon in the API data
+        let api_entry = match api_lookup.get(folder_name) {
+            Some(entry) => entry,
+            None => continue,
+        };
 
-                let has_update =
-                    !remote_ver.is_empty() && !local_ver.is_empty() && remote_ver != local_ver;
+        // Normalize versions: strip leading "v"/"V" and trim whitespace
+        let local_ver = meta
+            .installed_version
+            .trim()
+            .strip_prefix('v')
+            .or_else(|| meta.installed_version.trim().strip_prefix('V'))
+            .unwrap_or(meta.installed_version.trim());
+        let remote_ver = api_entry
+            .version
+            .trim()
+            .strip_prefix('v')
+            .or_else(|| api_entry.version.trim().strip_prefix('V'))
+            .unwrap_or(api_entry.version.trim());
 
-                // Sync stored version to ESOUI format so future comparisons
-                // don't flag false updates due to format differences
-                // (e.g. local manifest "2.4.10" vs ESOUI "2.4.10" with different source).
-                if !has_update && meta.installed_version != info.version {
-                    if let Some(entry) = store.addons.get_mut(folder_name) {
-                        entry.installed_version = info.version.clone();
-                        metadata_changed = true;
-                    }
-                }
+        let has_update = !remote_ver.is_empty() && !local_ver.is_empty() && remote_ver != local_ver;
 
-                results.push(UpdateCheckResult {
-                    folder_name: folder_name.clone(),
-                    esoui_id: meta.esoui_id,
-                    current_version: meta.installed_version.clone(),
-                    remote_version: info.version,
-                    download_url: info.download_url,
-                    has_update,
-                });
+        // Sync stored version format
+        if let Some(entry) = store.addons.get_mut(folder_name) {
+            if !has_update && meta.installed_version != api_entry.version {
+                entry.installed_version = api_entry.version.clone();
+                metadata_changed = true;
             }
-            Err(_) => {
-                // Skip addons we can't check — don't block the whole batch
-                continue;
+            // Sync last_update from API
+            if entry.esoui_last_update != api_entry.last_update {
+                entry.esoui_last_update = api_entry.last_update;
+                metadata_changed = true;
             }
         }
 
-        // Small delay between requests to be respectful to ESOUI
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        // Only fetch the download URL for addons that actually have updates
+        // (avoids N extra HTTP requests for up-to-date addons)
+        let download_url = if has_update {
+            esoui::fetch_addon_info(meta.esoui_id)
+                .map(|info| info.download_url)
+                .unwrap_or_else(|_| meta.download_url.clone())
+        } else {
+            meta.download_url.clone()
+        };
+
+        results.push(UpdateCheckResult {
+            folder_name: folder_name.clone(),
+            esoui_id: meta.esoui_id,
+            current_version: meta.installed_version.clone(),
+            remote_version: api_entry.version.clone(),
+            download_url,
+            has_update,
+        });
     }
 
-    // Persist any version syncs
     if metadata_changed {
         let _ = metadata::save_metadata(&addons_dir, &store);
     }
@@ -586,26 +656,31 @@ fn check_for_updates_blocking(addons_path: &str) -> Result<Vec<UpdateCheckResult
 }
 
 #[tauri::command]
-pub fn update_addon(
+pub async fn update_addon(
     state: tauri::State<'_, AllowedAddonsPath>,
     addons_path: String,
     esoui_id: u32,
 ) -> Result<InstallResult, String> {
     let addons_dir = require_allowed_path(&state, &addons_path)?;
+    tokio::task::spawn_blocking(move || update_addon_blocking(&addons_dir, esoui_id))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
 
+fn update_addon_blocking(addons_dir: &Path, esoui_id: u32) -> Result<InstallResult, String> {
     // Fetch latest info from ESOUI
     let info = esoui::fetch_addon_info(esoui_id)?;
 
     // Download and extract
     let tmp_file = esoui::download_addon(&info.download_url)?;
-    let installed_folders = installer::extract_addon_zip(tmp_file.path(), &addons_dir)?;
+    let installed_folders = installer::extract_addon_zip(tmp_file.path(), addons_dir)?;
 
     // Update metadata — store the ESOUI version so check_for_updates
     // compares like-for-like (both from ESOUI), avoiding mismatches
     // between local manifest versions and ESOUI-reported versions.
     // Also clean up any old metadata entries for the same esoui_id
     // that aren't in the newly extracted folders (handles addon renames).
-    let mut store = metadata::load_metadata(&addons_dir);
+    let mut store = metadata::load_metadata(addons_dir);
     let old_folders: Vec<String> = store
         .addons
         .iter()
@@ -619,14 +694,15 @@ pub fn update_addon(
     }
     record_installed_folders(
         &mut store,
-        &addons_dir,
+        addons_dir,
         &installed_folders,
         esoui_id,
         &info.version,
         &info.title,
         &info.download_url,
+        0, // preserved from existing metadata
     );
-    metadata::save_metadata(&addons_dir, &store)?;
+    metadata::save_metadata(addons_dir, &store)?;
 
     Ok(InstallResult {
         installed_folders,
@@ -711,13 +787,17 @@ fn auto_link_addons_blocking(addons_path: &str) -> Result<AutoLinkResult, String
         return Err(format!("AddOns folder not found: {}", addons_path));
     }
 
+    // Fetch the full ESOUI filelist in a single API call (~4000 addons).
+    let api_lookup = esoui::fetch_filelist_lookup()?;
+
     let mut store = metadata::load_metadata(&addons_dir);
 
-    // Find addons that exist on disk but aren't tracked
     let entries =
         fs::read_dir(&addons_dir).map_err(|e| format!("Failed to read AddOns folder: {}", e))?;
 
-    let mut untracked: Vec<(String, String)> = Vec::new(); // (folder_name, version)
+    let mut linked: Vec<String> = Vec::new();
+    let mut not_found: Vec<String> = Vec::new();
+
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -727,45 +807,44 @@ fn auto_link_addons_blocking(addons_path: &str) -> Result<AutoLinkResult, String
             Some(name) => name.to_string(),
             None => continue,
         };
-        if store.addons.contains_key(&folder_name) {
+
+        // Must have a manifest to be a real addon
+        if find_manifest(&addons_dir, &folder_name).is_none() {
             continue;
         }
-        // Must have a manifest to be a real addon
-        let manifest = find_manifest(&addons_dir, &folder_name)
-            .and_then(|p| manifest::parse_manifest(&folder_name, &p));
-        if let Some(m) = manifest {
-            // Skip libraries — they're usually bundled
-            if !m.is_library {
-                untracked.push((folder_name, m.version));
-            }
-        }
-    }
 
-    let mut linked: Vec<String> = Vec::new();
-    let mut not_found: Vec<String> = Vec::new();
-
-    for (folder_name, version) in &untracked {
-        match esoui::search_addon_by_name(folder_name) {
-            Ok(Some(esoui_id)) => {
-                // Verify by fetching info — title should roughly match
-                if let Ok(info) = esoui::fetch_addon_info(esoui_id) {
-                    metadata::record_install(
-                        &mut store,
-                        folder_name,
-                        esoui_id,
-                        version,
-                        &info.download_url,
-                    );
-                    linked.push(folder_name.clone());
-                } else {
-                    not_found.push(folder_name.clone());
+        // Look up this folder name in the API data
+        if let Some(api_entry) = api_lookup.get(&folder_name) {
+            let already_tracked = store.addons.get(&folder_name);
+            let needs_update = match already_tracked {
+                Some(meta) => {
+                    // Update existing entries: fill in missing esoui_id or last_update
+                    (meta.esoui_id == 0 && api_entry.esoui_id > 0)
+                        || meta.esoui_last_update == 0
+                        || meta.esoui_last_update != api_entry.last_update
                 }
+                None => true,
+            };
+            if needs_update {
+                let version = already_tracked
+                    .map(|m| m.installed_version.clone())
+                    .unwrap_or_else(|| read_local_version(&addons_dir, &folder_name));
+                let download_url = already_tracked
+                    .map(|m| m.download_url.clone())
+                    .unwrap_or_else(|| api_entry.file_info_uri.clone());
+                metadata::record_install_ext(
+                    &mut store,
+                    &folder_name,
+                    api_entry.esoui_id,
+                    &version,
+                    &download_url,
+                    api_entry.last_update,
+                );
+                linked.push(folder_name);
             }
-            Ok(None) => not_found.push(folder_name.clone()),
-            Err(_) => not_found.push(folder_name.clone()),
+        } else if !store.addons.contains_key(&folder_name) {
+            not_found.push(folder_name);
         }
-        // Be respectful to ESOUI
-        std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
     metadata::save_metadata(&addons_dir, &store)?;
@@ -796,7 +875,7 @@ pub fn batch_remove_addons(
 }
 
 #[tauri::command]
-pub fn import_addon_list(
+pub async fn import_addon_list(
     state: tauri::State<'_, AllowedAddonsPath>,
     addons_path: String,
     json_data: String,
@@ -806,11 +885,20 @@ pub fn import_addon_list(
 
     let addons_dir = require_allowed_path(&state, &addons_path)?;
 
+    tokio::task::spawn_blocking(move || import_addon_list_blocking(&addons_dir, &export))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn import_addon_list_blocking(
+    addons_dir: &Path,
+    export: &ExportData,
+) -> Result<ImportResult, String> {
     let mut installed: Vec<String> = Vec::new();
     let mut failed: Vec<String> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
 
-    let mut store = metadata::load_metadata(&addons_dir);
+    let mut store = metadata::load_metadata(addons_dir);
 
     for entry in &export.addons {
         // Skip if already installed
@@ -821,16 +909,17 @@ pub fn import_addon_list(
 
         match esoui::fetch_addon_info(entry.esoui_id) {
             Ok(info) => match esoui::download_addon(&info.download_url) {
-                Ok(tmp) => match installer::extract_addon_zip(tmp.path(), &addons_dir) {
+                Ok(tmp) => match installer::extract_addon_zip(tmp.path(), addons_dir) {
                     Ok(folders) => {
                         record_installed_folders(
                             &mut store,
-                            &addons_dir,
+                            addons_dir,
                             &folders,
                             entry.esoui_id,
                             &info.version,
                             &info.title,
                             &info.download_url,
+                            0, // will be populated by auto_link
                         );
                         installed.push(entry.folder_name.clone());
                     }
@@ -845,7 +934,7 @@ pub fn import_addon_list(
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
-    metadata::save_metadata(&addons_dir, &store)?;
+    metadata::save_metadata(addons_dir, &store)?;
 
     Ok(ImportResult {
         installed,
@@ -857,17 +946,21 @@ pub fn import_addon_list(
 // ─── Category Browsing ───────────────────────────────────────
 
 #[tauri::command]
-pub fn get_esoui_categories() -> Result<Vec<EsouiCategory>, String> {
-    esoui::fetch_categories()
+pub async fn get_esoui_categories() -> Result<Vec<EsouiCategory>, String> {
+    tokio::task::spawn_blocking(esoui::fetch_categories)
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn browse_esoui_category(
+pub async fn browse_esoui_category(
     category_id: u32,
     page: u32,
     sort_by: String,
 ) -> Result<Vec<esoui::EsouiSearchResult>, String> {
-    esoui::browse_category(category_id, page, &sort_by)
+    tokio::task::spawn_blocking(move || esoui::browse_category(category_id, page, &sort_by))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
 }
 
 // ─── API Version Compatibility ───────────────────────────────
