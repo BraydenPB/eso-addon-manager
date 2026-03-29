@@ -143,6 +143,7 @@ export type PackType = "addon-pack" | "build-pack" | "roster-pack";
 
 export interface Pack {
   id: string;
+  authorId: string;
   title: string;
   description: string;
   packType: PackType;

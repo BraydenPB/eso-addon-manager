@@ -188,6 +188,7 @@ pub fn run() {
             commands::auth_logout,
             commands::auth_get_user,
             commands::create_pack,
+            commands::update_pack,
             commands::vote_pack,
         ])
         .run(tauri::generate_context!())

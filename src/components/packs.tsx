@@ -47,6 +47,7 @@ import {
   XIcon,
   ArrowUpIcon,
   CheckIcon,
+  PencilIcon,
   RefreshCwIcon,
   SparklesIcon,
 } from "lucide-react";
@@ -159,6 +160,8 @@ export function Packs({
   const [createPackType, setCreatePackType] = useState("addon-pack");
   const [createTags, setCreateTags] = useState<string[]>([]);
   const [createAddons, setCreateAddons] = useState<PackAddonEntry[]>([]);
+  const [createAnonymous, setCreateAnonymous] = useState(false);
+  const [editingPackId, setEditingPackId] = useState<string | null>(null);
 
   // Installation — selected addons (esouiId set)
   const [installing, setInstalling] = useState(false);
@@ -277,6 +280,44 @@ export function Packs({
     setInstalling(false);
     setInstallProgress(null);
   };
+
+  const resetCreateForm = useCallback(() => {
+    setCreateTitle("");
+    setCreateDescription("");
+    setCreatePackType("addon-pack");
+    setCreateTags([]);
+    setCreateAddons([]);
+    setCreateAnonymous(false);
+    setCreateStep("details");
+    setEditingPackId(null);
+  }, []);
+
+  const handleStartEditing = useCallback((pack: Pack) => {
+    setCreateTitle(decodeHtml(pack.title));
+    setCreateDescription(decodeHtml(pack.description));
+    setCreatePackType(pack.packType);
+    setCreateTags([...pack.tags]);
+    setCreateAddons(
+      pack.addons.map((addon) => ({
+        esouiId: addon.esouiId,
+        name: decodeHtml(addon.name),
+        required: addon.required,
+        note: addon.note ? decodeHtml(addon.note) : undefined,
+      }))
+    );
+    setCreateAnonymous(pack.isAnonymous);
+    setCreateStep("details");
+    setEditingPackId(pack.id);
+    setSelectedPack(null);
+    setTab("create");
+  }, []);
+
+  const canEditSelectedPack = !!(
+    selectedPack &&
+    authUser &&
+    selectedPack.authorId &&
+    selectedPack.authorId === authUser.userId
+  );
 
   const handleToggleAddon = (esouiId: number, required: boolean) => {
     // Required addons can't be deselected
@@ -449,7 +490,7 @@ export function Packs({
                       : "text-muted-foreground/60 hover:text-muted-foreground"
                   )}
                 >
-                  {t === "browse" ? "Browse Packs" : "Create Pack"}
+                  {t === "browse" ? "Browse Packs" : editingPackId ? "Edit Pack" : "Create Pack"}
                 </button>
               ))}
             </div>
@@ -481,6 +522,8 @@ export function Packs({
             }}
             onVote={handleVote}
             authUser={authUser}
+            canEdit={canEditSelectedPack}
+            onEdit={() => selectedPack && handleStartEditing(selectedPack)}
           />
         ) : tab === "browse" ? (
           <PackListView
@@ -519,17 +562,24 @@ export function Packs({
             onTagsChange={setCreateTags}
             addons={createAddons}
             onAddonsChange={setCreateAddons}
-            onPublished={() => {
-              // Reset form and switch to browse
-              setCreateTitle("");
-              setCreateDescription("");
-              setCreatePackType("addon-pack");
-              setCreateTags([]);
-              setCreateAddons([]);
-              setCreateStep("details");
+            isAnonymous={createAnonymous}
+            onAnonymousChange={setCreateAnonymous}
+            editingPackId={editingPackId}
+            onPublished={(pack) => {
+              resetCreateForm();
+              setSelectedPack(pack);
               setTab("browse");
-              loadPacks("", 1);
+              loadPacks(searchQuery, 1);
             }}
+            onCancelEdit={
+              editingPackId
+                ? () => {
+                    resetCreateForm();
+                    setTab("browse");
+                    loadPacks(searchQuery, 1);
+                  }
+                : undefined
+            }
           />
         )}
 
@@ -843,6 +893,8 @@ function PackDetailView({
   onSelectAllOptional,
   onVote,
   authUser,
+  canEdit,
+  onEdit,
 }: {
   pack: Pack | null;
   loading: boolean;
@@ -855,6 +907,8 @@ function PackDetailView({
   onSelectAllOptional: (select: boolean) => void;
   onVote: (packId: string) => void;
   authUser: AuthUser | null;
+  canEdit: boolean;
+  onEdit: () => void;
 }) {
   if (loading || !pack) {
     return (
@@ -883,6 +937,12 @@ function PackDetailView({
         {!pack.isAnonymous && (
           <span className="text-xs text-muted-foreground/50">by {decodeHtml(pack.authorName)}</span>
         )}
+        {canEdit && (
+          <Button variant="outline" size="sm" onClick={onEdit} className="ml-auto">
+            <PencilIcon className="size-3.5 mr-1.5" />
+            Edit
+          </Button>
+        )}
         <button
           onClick={() => onVote(pack.id)}
           disabled={votingPacks.has(pack.id)}
@@ -890,7 +950,7 @@ function PackDetailView({
             authUser ? (pack.userVoted ? "Remove vote" : "Upvote this pack") : "Sign in to vote"
           }
           className={cn(
-            "group/vote relative flex items-center gap-1.5 text-sm font-medium rounded-full px-3 py-1.5 transition-all duration-200 border ml-auto",
+            "group/vote relative flex items-center gap-1.5 text-sm font-medium rounded-full px-3 py-1.5 transition-all duration-200 border",
             votingPacks.has(pack.id) && "opacity-60 pointer-events-none",
             pack.userVoted
               ? "text-[#c4a44a] bg-[#c4a44a]/[0.12] border-[#c4a44a]/30 hover:bg-[#c4a44a]/[0.2] shadow-[0_0_12px_rgba(196,164,74,0.15)]"
@@ -1103,7 +1163,11 @@ interface CreateViewProps {
   onTagsChange: (v: string[] | ((prev: string[]) => string[])) => void;
   addons: PackAddonEntry[];
   onAddonsChange: (v: PackAddonEntry[] | ((prev: PackAddonEntry[]) => PackAddonEntry[])) => void;
-  onPublished: () => void;
+  isAnonymous: boolean;
+  onAnonymousChange: (v: boolean) => void;
+  editingPackId: string | null;
+  onPublished: (pack: Pack) => void;
+  onCancelEdit?: () => void;
 }
 
 function PackCreateView({
@@ -1122,7 +1186,11 @@ function PackCreateView({
   onTagsChange: setSelectedTags,
   addons,
   onAddonsChange: setAddons,
+  isAnonymous,
+  onAnonymousChange: setIsAnonymous,
+  editingPackId,
   onPublished,
+  onCancelEdit,
 }: CreateViewProps) {
   // Search
   const [addonSource, setAddonSource] = useState<AddonSource>("search");
@@ -1206,7 +1274,6 @@ function PackCreateView({
 
   const [publishing, setPublishing] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
-  const [isAnonymous, setIsAnonymous] = useState(false);
 
   const handleLogin = async () => {
     setLoggingIn(true);
@@ -1242,18 +1309,30 @@ function PackCreateView({
     }
     setPublishing(true);
     try {
-      await invoke<Pack>("create_pack", {
-        payload: {
-          title: title.trim(),
-          description: description.trim(),
-          packType: packType,
-          addons,
-          tags: selectedTags,
-          isAnonymous,
-        },
-      });
-      toast.success("Pack published!");
-      onPublished();
+      const pack = editingPackId
+        ? await invoke<Pack>("update_pack", {
+            payload: {
+              id: editingPackId,
+              title: title.trim(),
+              description: description.trim(),
+              packType,
+              addons,
+              tags: selectedTags,
+              isAnonymous,
+            },
+          })
+        : await invoke<Pack>("create_pack", {
+            payload: {
+              title: title.trim(),
+              description: description.trim(),
+              packType,
+              addons,
+              tags: selectedTags,
+              isAnonymous,
+            },
+          });
+      toast.success(editingPackId ? "Pack updated!" : "Pack published!");
+      onPublished(pack);
     } catch (e) {
       const msg = String(e);
       if (msg.includes("expired") || msg.includes("sign in")) {
@@ -1313,22 +1392,34 @@ function PackCreateView({
       {/* Signed-in header */}
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground/60">
-          Creating as <span className="text-[#c4a44a] font-semibold">{authUser.userName}</span>
+          {editingPackId ? "Editing as " : "Creating as "}
+          <span className="text-[#c4a44a] font-semibold">{authUser.userName}</span>
         </span>
-        <button
-          onClick={handleLogout}
-          className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          {editingPackId && onCancelEdit && (
+            <button
+              onClick={onCancelEdit}
+              className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+            >
+              Cancel edit
+            </button>
+          )}
+          <button
+            onClick={handleLogout}
+            className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
 
       {step === "details" ? (
         /* ── Step 1: Pack Details ── */
         <div className="flex flex-col gap-3 overflow-y-auto max-h-[420px] px-3 -mx-3 pr-1">
           <p className="text-sm text-muted-foreground">
-            Create an addon pack to share with the community. Search and add addons in the next
-            step.
+            {editingPackId
+              ? "Update your pack details, then review the addon list before saving."
+              : "Create an addon pack to share with the community. Search and add addons in the next step."}
           </p>
 
           {/* Title */}
@@ -1721,10 +1812,10 @@ function PackCreateView({
               {publishing ? (
                 <>
                   <Loader2Icon className="size-4 animate-spin mr-1.5" />
-                  Publishing...
+                  {editingPackId ? "Saving..." : "Publishing..."}
                 </>
               ) : (
-                "Publish Pack"
+                editingPackId ? "Save Changes" : "Publish Pack"
               )}
             </Button>
           </div>
