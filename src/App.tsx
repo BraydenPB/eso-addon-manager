@@ -24,6 +24,7 @@ import {
   XIcon,
   PackageIcon,
 } from "lucide-react";
+import { Logo } from "@/components/ui/logo";
 import type {
   AddonManifest,
   AuthUser,
@@ -497,9 +498,12 @@ function App() {
       >
         {/* Bottom glow line */}
         <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#c4a44a]/30 to-transparent" />
-        <h1 className="font-heading text-sm font-semibold tracking-wide bg-gradient-to-r from-[#c4a44a] to-[#d4b45a] bg-clip-text text-transparent">
-          ESO Addon Manager
-        </h1>
+        <div className="flex items-center gap-2">
+          <Logo size={20} className="text-[#4dc2e6]" />
+          <h1 className="font-heading text-sm font-semibold tracking-wide bg-gradient-to-r from-[#c4a44a] to-[#d4b45a] bg-clip-text text-transparent">
+            ESOTK.COM - Addon Manager
+          </h1>
+        </div>
         <div className="flex-1" data-tauri-drag-region />
         <div className="flex items-center gap-2">
           {batchMode ? (
