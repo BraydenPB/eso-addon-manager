@@ -115,15 +115,7 @@ export interface MinionMigrationResult {
 
 // App-level UI state types
 export type SortMode = "name" | "author";
-export type FilterMode =
-  | "all"
-  | "addons"
-  | "libraries"
-  | "outdated"
-  | "missing-deps"
-  | "favorites"
-  | "tagged"
-  | "untracked";
+export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-deps" | "favorites";
 
 // Predefined tags users can apply to addons
 export const PRESET_TAGS = ["favorite", "testing", "broken", "essential", "cosmetic"] as const;

@@ -554,11 +554,8 @@ function App() {
               return addon.missingDependencies.length > 0;
             case "favorites":
               return addon.tags.includes("favorite");
-            case "tagged":
-              return activeTagFilter ? addon.tags.includes(activeTagFilter) : addon.tags.length > 0;
-            case "untracked":
-              return !addon.esouiId;
             default:
+              if (activeTagFilter) return addon.tags.includes(activeTagFilter);
               return true;
           }
         })

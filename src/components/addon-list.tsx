@@ -56,8 +56,6 @@ const FILTERS: [FilterMode, string][] = [
   ["favorites", "\u2605 Favorites"],
   ["outdated", "Outdated"],
   ["missing-deps", "Issues"],
-  ["untracked", "Untracked"],
-  ["tagged", "Tagged"],
 ];
 
 export function AddonList({
@@ -99,14 +97,22 @@ export function AddonList({
       favorites: allAddons.filter((a) => a.tags.includes("favorite")).length,
       outdated: allAddons.filter((a) => updatesMap.has(a.folderName)).length,
       "missing-deps": allAddons.filter((a) => a.missingDependencies.length > 0).length,
-      untracked: allAddons.filter((a) => !a.esouiId).length,
-      tagged: allAddons.filter((a) => a.tags.length > 0).length,
     }),
     [allAddons, updatesMap]
   );
 
-  // Collect all unique tags across addons for the tag sub-filter
-  const allTags = useMemo(() => [...new Set(allAddons.flatMap((a) => a.tags))].sort(), [allAddons]);
+  // Collect all unique tags with counts — each becomes its own tab
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const addon of allAddons) {
+      for (const tag of addon.tags) {
+        // "favorite" is already handled by the dedicated Favorites filter
+        if (tag === "favorite") continue;
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [allAddons]);
 
   const batchMode = selectedFolders.size > 0;
 
@@ -193,23 +199,24 @@ export function AddonList({
             aria-label="Filter addons"
           >
             {FILTERS.map(([mode, label]) => {
-              const hideIfZero = ["outdated", "missing-deps", "favorites", "untracked", "tagged"];
+              const hideIfZero = ["outdated", "missing-deps", "favorites"];
               if (hideIfZero.includes(mode) && filterCounts[mode] === 0) return null;
+              const isActive = filterMode === mode && !activeTagFilter;
               return (
                 <button
                   key={mode}
                   role="tab"
-                  aria-selected={filterMode === mode}
+                  aria-selected={isActive}
                   aria-label={`Filter by ${label}`}
                   className={cn(
                     "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150",
-                    filterMode === mode
+                    isActive
                       ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
                       : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
                   )}
                   onClick={() => {
                     onFilterChange(mode);
-                    if (mode !== "tagged") onActiveTagFilterChange(null);
+                    onActiveTagFilterChange(null);
                   }}
                 >
                   {label}
@@ -217,38 +224,35 @@ export function AddonList({
                 </button>
               );
             })}
-          </div>
 
-          {/* Tag sub-filter when "Tagged" is active */}
-          {filterMode === "tagged" && allTags.length > 0 && (
-            <div className="flex gap-1 px-3 pb-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <button
-                className={cn(
-                  "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition-all duration-150 border",
-                  !activeTagFilter
-                    ? "bg-sky-500/15 text-sky-400 border-sky-500/25"
-                    : "text-muted-foreground/50 border-transparent hover:text-muted-foreground hover:bg-white/[0.04]"
-                )}
-                onClick={() => onActiveTagFilterChange(null)}
-              >
-                Any tag
-              </button>
-              {allTags.map((tag) => (
-                <button
-                  key={tag}
-                  className={cn(
-                    "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition-all duration-150 border",
-                    activeTagFilter === tag
-                      ? "bg-sky-500/15 text-sky-400 border-sky-500/25"
-                      : "text-muted-foreground/50 border-transparent hover:text-muted-foreground hover:bg-white/[0.04]"
-                  )}
-                  onClick={() => onActiveTagFilterChange(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-          )}
+            {/* Dynamic tag tabs — one per tag in use */}
+            {[...tagCounts.entries()]
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([tag, count]) => {
+                const isActive = activeTagFilter === tag;
+                return (
+                  <button
+                    key={`tag:${tag}`}
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-label={`Filter by tag: ${tag}`}
+                    className={cn(
+                      "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150",
+                      isActive
+                        ? "bg-sky-500/15 text-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-sky-500/25"
+                        : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
+                    )}
+                    onClick={() => {
+                      onFilterChange("all");
+                      onActiveTagFilterChange(tag);
+                    }}
+                  >
+                    {tag}
+                    <span className="ml-1 opacity-50">({count})</span>
+                  </button>
+                );
+              })}
+          </div>
 
           {/* Sort + count bar */}
           <div className="flex items-center justify-between border-y border-white/[0.06] px-3 py-1.5">
