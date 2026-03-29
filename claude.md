@@ -1,38 +1,62 @@
-# ESO Addon Manager
+# ESO Addon Manager – Claude Code Guide
 
-You are Claude Code working in this repo.
+You are Claude Code working in this repository. Optimize for **safety, clarity, and maintainability** while helping evolve this project.
 
-## Project Overview
+---
 
-An open-source ESO addon manager desktop app. Current state: **functional alpha** with addon scanning, installation, updates, dependency resolution, backups, profiles, character management, API compatibility checks, and Minion migration.
+## Mission & Current State
 
-### Stack
+ESO Addon Manager is an open‑source desktop app for managing Elder Scrolls Online addons. It is currently in a **functional alpha** state with:
+
+- Addon scanning and installation
+- Updates and dependency resolution
+- Backups and profiles
+- Character management and API compatibility checks
+- Minion migration support
+
+Your job is to improve this app without breaking existing functionality or the build.
+
+---
+
+## Tech Stack Snapshot
+
 - **Desktop client**: Tauri v2 + React 19 + TypeScript + Tailwind v4 + shadcn-ui
-- **Backend** (planned): Cloudflare Workers + KV, metadata caching only
-- **CI/CD**: GitHub Actions — tag-triggered release builds (Windows NSIS/MSI)
+- **Backend (planned)**: Cloudflare Workers + KV (metadata caching only)
+- **CI/CD**: GitHub Actions with tag‑triggered release builds (Windows NSIS/MSI)
 
-## Important Rules
+When in doubt, prefer solutions that fit naturally into this stack.
 
-- Do not use private APIs or hacks
-- Prefer public ESOUI pages and direct public download URLs
-- Keep scraping centralized and cached (all in `esoui.rs`)
-- Do not implement hourly background scraping — use on-open refresh + manual Refresh button
-- Optimize for maintainability and simplicity over cleverness
+---
 
-## Code Quality
+## Core Principles & Constraints
 
-- **After editing Rust code, always run both `cargo fmt` and `cargo clippy`** — clippy fixes can break formatting, so fmt must run after clippy, not before
-- Frontend checks: `npm run check` (runs tsc + eslint + prettier)
-- CI enforces all of these on every PR
+Follow these rules unless explicitly directed otherwise:
 
-## Architecture
+- **No private APIs or hacks**
+  - Only use public ESOUI pages and direct public download URLs.
+- **Centralized scraping**
+  - Keep all scraping logic in `src-tauri/src/esoui.rs`.
+- **No background spam**
+  - Do not implement hourly or aggressive background scraping.
+  - Use “on‑open” refresh plus an explicit **Refresh** button.
+- **Maintainability over cleverness**
+  - Prefer straightforward, well‑documented code over overly abstract solutions.
+- **Build must always pass**
+  - Keep the repo buildable and tests/linters passing after each change.
 
-```
+---
+
+## Project Structure
+
+Use the existing architecture; extend it instead of inventing new patterns:
+
+```text
 src/                    # React frontend
-  components/           # Feature components (addon-list, settings, etc.)
+  components/           # Feature components (addon list, settings, etc.)
   components/ui/        # shadcn-ui primitives
-  lib/                  # Utilities (store, utils)
+  lib/                  # Utilities (store, helpers)
   types.ts              # Shared TypeScript interfaces
+
 src-tauri/src/          # Rust backend
   commands.rs           # All Tauri command handlers
   esoui.rs              # ESOUI HTTP client & HTML scraping
@@ -42,93 +66,201 @@ src-tauri/src/          # Rust backend
   lib.rs                # Module defs & Tauri app setup
 ```
 
-## Git Workflow
+When adding new logic, pick the closest existing file that matches the concern before creating new modules.
+
+---
+
+## Code Quality & Checks
+
+**Rust**
+
+- After editing Rust code, always run:
+  1. `cargo clippy --fix --allow-dirty --allow-staged` (or similar clippy invocation)
+  2. `cargo fmt`
+- `cargo fmt` must run **after** clippy because clippy fixes can break formatting.
+
+**Frontend**
+
+- Run: `npm run check`
+  - This runs TypeScript, ESLint, and Prettier.
+- Fix all reported issues before considering the work complete.
+
+**CI**
+
+- GitHub Actions enforces Rust and frontend checks on every PR.
+- Treat CI failures as blockers; update code until CI is green.
+
+---
+
+## Git Workflow & Releases
+
+### Branching
 
 Use **GitHub Flow**:
-1. `master` is always releasable
-2. Create short-lived branches: `feat/feature-name`, `fix/bug-name`
-3. Open a PR, let CI pass, merge to `master`
-4. Tag releases from `master` (e.g., `v0.2.0`) — triggers release CI
 
-### Commits
-- Conventional Commits: `type(scope): description`
-- Types: feat, fix, docs, style, refactor, test, chore
-- Imperative mood, <50 chars, no period
+1. `master` is always releasable.
+2. Create short‑lived branches such as:
+   - `feat/feature-name`
+   - `fix/bug-name`
+3. Open a PR, let CI pass, request review, then merge to `master`.
+4. Tag releases from `master` (for example `v0.2.0`) to trigger release CI.
 
-### Releases
-- Bump version in 3 files: `tauri.conf.json`, `Cargo.toml`, `package.json`
-- Push tag `v*` to trigger `.github/workflows/release.yml`
-- Release CI builds Windows NSIS/MSI installers and uploads to GitHub Releases
+### Commit Messages
 
-## Design System
+Use **Conventional Commits**:
 
-The UI follows the ESO Log Aggregator visual language adapted for shadcn + Tailwind v4.
-Reference files for design decisions:
+- Format: `type(scope): description`
+- Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+- Use imperative mood, keep under ~50 characters, no trailing period.
 
-1. `context/40-design-system.md` — Design principles, colors, glass morphism, typography, animations
-2. `context/41-component-patterns.md` — Concrete shadcn component recipes
-3. `context/42-theme-tokens.md` — CSS variables, @theme inline mappings, Tailwind utilities
+### Release Process
 
-### Implemented Primitives (use these, don't reinvent)
-- `GlassPanel` (`ui/glass-panel.tsx`) — 3 variants: `primary`, `default`, `subtle`
-- `SectionHeader` (`ui/section-header.tsx`) — uppercase micro-label (11px, Space Grotesk)
-- `InfoPill` (`ui/info-pill.tsx`) — 7 colors: `gold`, `sky`, `emerald`, `amber`, `red`, `violet`, `muted`
+When preparing a new release:
+
+1. Bump the version in:
+   - `tauri.conf.json`
+   - `Cargo.toml`
+   - `package.json`
+2. Push a tag `v*` (for example `v0.2.0`).
+3. `.github/workflows/release.yml` builds Windows NSIS/MSI installers and attaches them to GitHub Releases.
+
+---
+
+## Design System Essentials
+
+The UI builds on the ESO Log Aggregator visual language, adapted to shadcn-ui and Tailwind v4. Respect the existing design system; do not introduce ad‑hoc styles if a primitive exists.
+
+### Reference Design Docs
+
+Review these before UI work:
+
+1. `context/40-design-system.md` — design principles, colors, glass morphism, typography, animations.
+2. `context/41-component-patterns.md` — concrete shadcn component recipes.
+3. `context/42-theme-tokens.md` — CSS variables, `@theme` inline mappings, Tailwind utilities.
+
+### Implemented UI Primitives
+
+Use these components instead of re‑rolling new ones:
+
+- `GlassPanel` (`components/ui/glass-panel.tsx`)
+  - Variants: `primary`, `default`, `subtle`
+- `SectionHeader` (`components/ui/section-header.tsx`)
+  - Uppercase micro-label (11px, Space Grotesk)
+- `InfoPill` (`components/ui/info-pill.tsx`)
+  - Colors: `gold`, `sky`, `emerald`, `amber`, `red`, `violet`, `muted`
 
 ### Overridden shadcn Components
-- `Input` — glass styling (translucent bg, sky-blue focus ring)
-- `Dialog` — glass morphism overlay + gradient bg + gold gradient titles
-- `Toaster` — glass-styled toasts
 
-### Key Rules
-- Always-dark theme, no light mode
-- Glass morphism panels (three tiers: primary, default, subtle)
-- Space Grotesk (`font-heading`) for headings, Geist (`font-sans`) for body text
-- 3px colored left-border on addon list items for status
-- Borders: `border-white/[0.06]` not `border-border` for glass surfaces
-- Dividers: `<div className="border-t border-white/[0.06]" />` not `<Separator />`
-- Spinners: `border-white/[0.1] border-t-[#c4a44a]` not `border-border border-t-primary`
-- Animation scale: fast (150ms), normal (250ms), slow (400ms)
-- ESO gold (#c4a44a) as primary accent, sky-blue (#38bdf8) for interactive/focus
+- `Input` — glass styling (translucent background, sky‑blue focus ring)
+- `Dialog` — glass morphism overlay with gradient background and gold gradient titles
+- `Toaster` — glass‑styled toasts
 
-## How to Work
+### Visual Rules
 
-1. Read relevant context files before starting work
-2. Read `context/40-design-system.md` before any UI work
-3. Make small, reviewable changes
-4. Keep the repo buildable after each change
-5. Ask before making large architecture changes
+- Always‑dark theme; no light mode.
+- Glass morphism panels:
+  - Three tiers: `primary`, `default`, `subtle`.
+- Typography:
+  - `Space Grotesk` (`font-heading`) for headings.
+  - `Geist` (`font-sans`) for body text.
+- Addon list items:
+  - 3px colored left border encoding status.
+- Borders and dividers:
+  - Surfaces: `border-white/[0.06]` (not `border-border`).
+  - Dividers: `<div className="border-t border-white/[0.06]" />` instead of `<Separator />`.
+- Spinners:
+  - Use `border-white/[0.1] border-t-[#c4a44a]` (ESO gold top border).
+- Motion:
+  - Timing scale: fast 150ms, normal 250ms, slow 400ms.
+- Colors:
+  - ESO gold `#c4a44a` as primary accent.
+  - Sky‑blue `#38bdf8` for interactive and focus states.
 
-## Available Tools
+---
 
-- `gh` for GitHub operations (PRs, issues, releases)
-- `wrangler` for Cloudflare Worker deployment (when backend phase begins)
-- Local Rust/Node toolchain (`npm run tauri dev` for development)
+## How to Work in This Repo (Claude)
 
-### Chrome DevTools MCP (Visual Debugging)
+When performing changes, follow this workflow:
 
-The Tauri WebView2 exposes Chrome DevTools Protocol on **port 9222** via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, set in `lib.rs` behind `#[cfg(debug_assertions)]` so it's **only enabled in debug builds**. The Chrome DevTools MCP is configured project-locally (in `~/.claude/projects/.../settings.json`) to connect via `--browserUrl http://127.0.0.1:9222`.
+1. **Load context**
+   - Skim the relevant `context/*.md` files for the area you are touching.
+   - Always read `context/40-design-system.md` before any UI work.
+2. **Clarify intent**
+   - Restate the user’s goal and constraints before proposing changes.
+   - Prefer small, incremental improvements over broad refactors.
+3. **Plan the change**
+   - Identify which files you will touch (both Rust and React).
+   - Check for existing patterns or utilities to reuse.
+4. **Implement safely**
+   - Keep changes small and reviewable.
+   - Avoid introducing new dependencies unless necessary and clearly justified.
+5. **Verify**
+   - Run `npm run tauri dev` locally (or instruct the user) to ensure the app still starts.
+   - Run `npm run check`, `cargo clippy`, and `cargo fmt`.
+6. **Explain**
+   - When done, summarize what changed, why, and any follow‑up tasks or caveats.
 
-**Setup**: Run `npm run tauri dev` — CDP is automatically available on `localhost:9222`. Production builds are never affected.
+---
 
-**Capabilities**:
-- `take_screenshot` — see the actual rendered UI
-- `evaluate_script` — run JS in the webview (check state, trigger actions)
-- `click` / `fill` / `hover` — interact with UI elements
-- `list_network_requests` / `get_network_request` — inspect ESOUI API calls
-- `list_console_messages` — read frontend logs
-- `take_snapshot` — get full DOM accessibility tree
+## Available Tools & Commands
 
-**Workflow for UI debugging**:
-1. User starts `npm run tauri dev`
-2. Claude connects via `list_pages` → `navigate_page` to `http://localhost:1420` → `select_page`
-3. Use `take_screenshot` to see current state
-4. Use other CDP tools to inspect, interact, and diagnose issues
+You can assume access (by the human developer) to:
 
-**Important**: CDP is only enabled in debug builds via `#[cfg(debug_assertions)]` in `lib.rs`. Production/release builds never expose the debug port.
+- `gh` — GitHub operations (PRs, issues, releases).
+- `wrangler` — Cloudflare Worker deployment (once backend work begins).
+- Local Rust/Node toolchain:
+  - `npm install`
+  - `npm run tauri dev` — run the desktop app in development.
 
-## Context Files
+When suggesting steps, prefer commands that fit this toolchain.
 
-- `context/00-overview.md` — Core vision and principles
-- `context/10-desktop-client.md` — Desktop client architecture
-- `context/20-metadata-worker.md` — Backend worker design
-- `context/30-mvp-plan.md` — Original phase roadmap (phases 1-3 complete)
+---
+
+## Chrome DevTools MCP (Visual Debugging)
+
+The Tauri WebView2 exposes Chrome DevTools Protocol (CDP) on **port 9222** via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` in `src-tauri/src/lib.rs`, guarded by `#[cfg(debug_assertions)]` so it is enabled **only in debug builds**.
+
+The Chrome DevTools MCP is configured on the developer machine (in `~/.claude/projects/.../settings.json`) to connect with:
+
+- `--browserUrl http://127.0.0.1:9222`
+
+### Setup
+
+1. Run `npm run tauri dev`.
+2. CDP is automatically available at `http://localhost:9222`.
+3. Production/release builds never expose this debug port.
+
+### Capabilities
+
+Use CDP‑backed tools for visual debugging:
+
+- `take_screenshot` — capture the current rendered UI.
+- `evaluate_script` — run JavaScript in the webview to inspect state or trigger actions.
+- `click` / `fill` / `hover` — interact with UI elements.
+- `list_network_requests` / `get_network_request` — inspect ESOUI API calls.
+- `list_console_messages` — read frontend logs.
+- `take_snapshot` — capture the DOM accessibility tree.
+
+### Typical Debugging Flow
+
+1. The user starts `npm run tauri dev`.
+2. Claude connects via:
+   - `list_pages` → `navigate_page` to `http://localhost:1420` → `select_page`.
+3. Use `take_screenshot` to see the current state of the app.
+4. Use other CDP tools to inspect layout, state, network calls, and console messages.
+
+Remember: CDP access must never leak into production builds.
+
+---
+
+## Context File Index
+
+Before large changes, consult these:
+
+- `context/00-overview.md` — Core vision and principles.
+- `context/10-desktop-client.md` — Desktop client architecture.
+- `context/20-metadata-worker.md` — Backend worker design.
+- `context/30-mvp-plan.md` — Original phase roadmap (phases 1–3 complete).
+- `context/40-design-system.md` — Design language and visual rules.
+- `context/41-component-patterns.md` — Component patterns and best practices.
+- `context/42-theme-tokens.md` — Theme tokens and Tailwind integration.
