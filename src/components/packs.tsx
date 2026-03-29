@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, decodeHtml } from "@/lib/utils";
 import {
   PackageIcon,
   DownloadIcon,
@@ -380,7 +380,7 @@ export function Packs({
               </Button>
             )}
             <PackageIcon className="size-4 text-[#c4a44a]" />
-            {selectedPack ? selectedPack.title : "Pack Hub"}
+            {selectedPack ? decodeHtml(selectedPack.title) : "Pack Hub"}
           </DialogTitle>
 
           {/* Tab bar with animated pill indicator */}
@@ -621,7 +621,7 @@ function PackListView({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-heading text-sm font-semibold truncate group-hover:text-[#c4a44a] transition-colors duration-200">
-                        {pack.title}
+                        {decodeHtml(pack.title)}
                       </span>
                       <InfoPill color={pillColor}>
                         {TYPE_LABELS[pack.packType] ?? pack.packType}
@@ -662,7 +662,7 @@ function PackListView({
                 {/* Description */}
                 {pack.description && (
                   <p className="mt-1.5 text-xs text-muted-foreground/70 line-clamp-2 leading-relaxed">
-                    {pack.description}
+                    {decodeHtml(pack.description)}
                   </p>
                 )}
 
@@ -688,9 +688,9 @@ function PackListView({
                           "bg-white/[0.08] text-muted-foreground/60"
                         )}
                       >
-                        {pack.authorName.charAt(0)}
+                        {decodeHtml(pack.authorName).charAt(0)}
                       </span>
-                      {pack.authorName}
+                      {decodeHtml(pack.authorName)}
                     </span>
                   )}
                 </div>
@@ -758,7 +758,7 @@ function PackDetailView({
 
   return (
     <div className="flex flex-col gap-3 overflow-y-auto max-h-[400px]">
-      <p className="text-sm text-muted-foreground">{pack.description}</p>
+      <p className="text-sm text-muted-foreground">{decodeHtml(pack.description)}</p>
 
       <div className="flex items-center gap-2 flex-wrap">
         <InfoPill color="muted">{TYPE_LABELS[pack.packType] ?? pack.packType}</InfoPill>
@@ -768,7 +768,7 @@ function PackDetailView({
           </InfoPill>
         ))}
         {!pack.isAnonymous && (
-          <span className="text-xs text-muted-foreground/50">by {pack.authorName}</span>
+          <span className="text-xs text-muted-foreground/50">by {decodeHtml(pack.authorName)}</span>
         )}
         <button
           onClick={() => onVote(pack.id)}
