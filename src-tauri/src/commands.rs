@@ -267,7 +267,7 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
             None => continue,
         };
 
-        let manifest_path = match find_manifest(&addons_dir, &folder_name) {
+        let manifest_path = match find_manifest(addons_dir, &folder_name) {
             Some(p) => p,
             None => continue,
         };
@@ -282,7 +282,7 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
     // ESO would recognize. ESO also searches subfolders up to 3 levels deep for
     // embedded libraries, so we scan those too.
     let mut installed: HashSet<String> = HashSet::new();
-    if let Ok(top_entries) = fs::read_dir(&addons_dir) {
+    if let Ok(top_entries) = fs::read_dir(addons_dir) {
         for entry in top_entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
@@ -319,7 +319,7 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
     // Load metadata and clean up stale entries:
     // - Remove entries for addon folders that no longer exist on disk
     // - Deduplicate entries with the same esoui_id (keep the one that exists)
-    let mut store = metadata::load_metadata(&addons_dir);
+    let mut store = metadata::load_metadata(addons_dir);
     let stale: Vec<String> = store
         .addons
         .keys()
@@ -330,7 +330,7 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
         for name in &stale {
             metadata::remove_entry(&mut store, name);
         }
-        let _ = metadata::save_metadata(&addons_dir, &store);
+        let _ = metadata::save_metadata(addons_dir, &store);
     }
 
     // Check for missing dependencies and enrich with ESOUI ID
@@ -659,7 +659,7 @@ fn check_for_updates_blocking(addons_dir: &Path) -> Result<Vec<UpdateCheckResult
     }
 
     if metadata_changed {
-        let _ = metadata::save_metadata(&addons_dir, &store);
+        let _ = metadata::save_metadata(addons_dir, &store);
     }
 
     Ok(results)
@@ -812,10 +812,10 @@ fn auto_link_addons_blocking(addons_dir: &Path) -> Result<AutoLinkResult, String
     // Fetch the full ESOUI filelist in a single API call (~4000 addons).
     let api_lookup = esoui::fetch_filelist_lookup()?;
 
-    let mut store = metadata::load_metadata(&addons_dir);
+    let mut store = metadata::load_metadata(addons_dir);
 
     let entries =
-        fs::read_dir(&addons_dir).map_err(|e| format!("Failed to read AddOns folder: {}", e))?;
+        fs::read_dir(addons_dir).map_err(|e| format!("Failed to read AddOns folder: {}", e))?;
 
     let mut linked: Vec<String> = Vec::new();
     let mut not_found: Vec<String> = Vec::new();
@@ -831,7 +831,7 @@ fn auto_link_addons_blocking(addons_dir: &Path) -> Result<AutoLinkResult, String
         };
 
         // Must have a manifest to be a real addon
-        if find_manifest(&addons_dir, &folder_name).is_none() {
+        if find_manifest(addons_dir, &folder_name).is_none() {
             continue;
         }
 
@@ -867,7 +867,7 @@ fn auto_link_addons_blocking(addons_dir: &Path) -> Result<AutoLinkResult, String
             if needs_update {
                 let version = already_tracked
                     .map(|m| m.installed_version.clone())
-                    .unwrap_or_else(|| read_local_version(&addons_dir, &folder_name));
+                    .unwrap_or_else(|| read_local_version(addons_dir, &folder_name));
                 let download_url = already_tracked
                     .map(|m| m.download_url.clone())
                     .unwrap_or_else(|| api_entry.file_info_uri.clone());
@@ -886,7 +886,7 @@ fn auto_link_addons_blocking(addons_dir: &Path) -> Result<AutoLinkResult, String
         }
     }
 
-    metadata::save_metadata(&addons_dir, &store)?;
+    metadata::save_metadata(addons_dir, &store)?;
 
     Ok(AutoLinkResult { linked, not_found })
 }
