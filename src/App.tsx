@@ -208,6 +208,9 @@ function App() {
     [scanAddons, checkForUpdates]
   );
 
+  // Guards to prevent double-init in React StrictMode
+  const initRan = useRef(false);
+
   // Auto-link untracked addons on first load
   const autoLinkRan = useRef(false);
   const runAutoLink = useCallback(
@@ -234,6 +237,9 @@ function App() {
   );
 
   useEffect(() => {
+    if (initRan.current) return;
+    initRan.current = true;
+
     async function init() {
       const savedSort = await getSetting<SortMode>("sortMode", "name");
       const savedFilter = await getSetting<FilterMode>("filterMode", "all");
