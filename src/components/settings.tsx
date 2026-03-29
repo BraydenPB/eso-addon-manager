@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { SectionHeader } from "@/components/ui/section-header";
+import { Logo } from "@/components/ui/logo";
 
 interface SettingsProps {
   addonsPath: string;
@@ -115,7 +116,10 @@ export function Settings({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Logo size={18} className="text-[#4dc2e6]" />
+            Settings
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
