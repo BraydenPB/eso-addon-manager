@@ -1,5 +1,5 @@
-import type { Env, Pack } from "./types";
-import { getPack, getPackIndex, packToIndexItem, putPack, putPackIndex } from "./kv";
+import type { Env, Pack, VoteResponse } from "./types";
+import { getPack, getPackIndex, packToIndexItem, putPack, putPackIndex, getVote, putVote, deleteVote } from "./kv";
 import { corsHeaders, handlePreflight } from "./cors";
 import { validatePack } from "./validate";
 import { SEED_PACKS } from "./seed";
@@ -209,6 +209,54 @@ async function handleSeed(request: Request, env: Env): Promise<Response> {
   });
 }
 
+// ── POST /packs/:id/vote — toggle upvote ──────────────────────────
+async function handleVotePack(
+  request: Request,
+  env: Env,
+  id: string,
+): Promise<Response> {
+  if (!requireAuth(request, env)) {
+    return unauthorized(request);
+  }
+
+  const pack = await getPack(env, id);
+  if (!pack) {
+    return notFound(request, `Pack "${id}" not found`);
+  }
+
+  // Use a simple user identifier from the API key (in production, extract from JWT)
+  const userId = request.headers.get("X-User-Id") ?? "api-key-user";
+
+  const existingVote = await getVote(env, id, userId);
+  let voted: boolean;
+
+  if (existingVote) {
+    // Unvote
+    await deleteVote(env, id, userId);
+    pack.voteCount = Math.max(0, (pack.voteCount ?? 0) - 1);
+    voted = false;
+  } else {
+    // Upvote
+    await putVote(env, id, userId);
+    pack.voteCount = (pack.voteCount ?? 0) + 1;
+    voted = true;
+  }
+
+  await putPack(env, pack);
+
+  // Update index entry
+  const index = (await getPackIndex(env)) ?? { items: [] };
+  const idx = index.items.findIndex((item) => item.id === id);
+  const indexItem = packToIndexItem(pack);
+  if (idx >= 0) {
+    index.items[idx] = indexItem;
+  }
+  await putPackIndex(env, index);
+
+  const response: VoteResponse = { voted, voteCount: pack.voteCount };
+  return json(request, response);
+}
+
 // ── Router ─────────────────────────────────────────────────────────
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -229,6 +277,12 @@ export default {
     // POST /packs — create
     if (method === "POST" && pathname === "/packs") {
       return handleCreatePack(request, env);
+    }
+
+    // /packs/:id/vote route
+    const voteMatch = pathname.match(/^\/packs\/([a-z0-9-]+)\/vote$/);
+    if (voteMatch && method === "POST") {
+      return handleVotePack(request, env, voteMatch[1]);
     }
 
     // /packs/:id routes

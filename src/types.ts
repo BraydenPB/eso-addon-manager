@@ -149,6 +149,7 @@ export interface Pack {
   authorName: string;
   isAnonymous: boolean;
   voteCount: number;
+  userVoted: boolean;
   tags: string[];
   addons: PackAddonEntry[];
   createdAt: string;

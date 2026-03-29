@@ -11,6 +11,11 @@ import type {
   AddonManifest,
   AuthUser,
 } from "../types";
+
+interface VoteResponse {
+  voted: boolean;
+  voteCount: number;
+}
 import {
   Dialog,
   DialogContent,
@@ -271,6 +276,69 @@ export function Packs({
     onRefresh();
   };
 
+  // ── Voting ──────────────────────────────────────────────────────────
+  const [votingPacks, setVotingPacks] = useState<Set<string>>(new Set());
+
+  const handleVote = async (packId: string) => {
+    if (!authUser) {
+      toast.error("Sign in to vote on packs.");
+      return;
+    }
+    if (votingPacks.has(packId)) return; // debounce
+
+    // Optimistic update helper
+    const applyVote = (pack: Pack): Pack => {
+      const willVote = !pack.userVoted;
+      return {
+        ...pack,
+        userVoted: willVote,
+        voteCount: pack.voteCount + (willVote ? 1 : -1),
+      };
+    };
+
+    // Optimistic: update list + detail
+    setPacks((prev) => prev.map((p) => (p.id === packId ? applyVote(p) : p)));
+    if (selectedPack?.id === packId) {
+      setSelectedPack((prev) => (prev ? applyVote(prev) : prev));
+    }
+
+    setVotingPacks((prev) => new Set(prev).add(packId));
+    try {
+      const result = await invoke<VoteResponse>("vote_pack", { packId });
+      // Reconcile with server truth
+      const reconcile = (pack: Pack): Pack => ({
+        ...pack,
+        userVoted: result.voted,
+        voteCount: result.voteCount,
+      });
+      setPacks((prev) => prev.map((p) => (p.id === packId ? reconcile(p) : p)));
+      if (selectedPack?.id === packId) {
+        setSelectedPack((prev) => (prev ? reconcile(prev) : prev));
+      }
+    } catch (e) {
+      // Revert optimistic update
+      const revert = (pack: Pack): Pack => {
+        const wasVoted = !pack.userVoted;
+        return {
+          ...pack,
+          userVoted: wasVoted,
+          voteCount: pack.voteCount + (wasVoted ? 1 : -1),
+        };
+      };
+      setPacks((prev) => prev.map((p) => (p.id === packId ? revert(p) : p)));
+      if (selectedPack?.id === packId) {
+        setSelectedPack((prev) => (prev ? revert(prev) : prev));
+      }
+      toast.error(String(e));
+    } finally {
+      setVotingPacks((prev) => {
+        const next = new Set(prev);
+        next.delete(packId);
+        return next;
+      });
+    }
+  };
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
@@ -322,6 +390,8 @@ export function Packs({
             installProgress={installProgress}
             selectedAddons={selectedAddons}
             onToggleAddon={handleToggleAddon}
+            onVote={handleVote}
+            authUser={authUser}
           />
         ) : tab === "browse" ? (
           <PackListView
@@ -337,6 +407,8 @@ export function Packs({
             onSelectPack={handleSelectPack}
             onLoadMore={handleLoadMore}
             onRetry={() => loadPacks(searchQuery, 1)}
+            onVote={handleVote}
+            authUser={authUser}
           />
         ) : (
           <PackCreateView
@@ -418,6 +490,8 @@ function PackListView({
   onSelectPack,
   onLoadMore,
   onRetry,
+  onVote,
+  authUser,
 }: {
   packs: Pack[];
   loading: boolean;
@@ -431,6 +505,8 @@ function PackListView({
   onSelectPack: (id: string) => void;
   onLoadMore: () => void;
   onRetry: () => void;
+  onVote: (packId: string) => void;
+  authUser: AuthUser | null;
 }) {
   return (
     <div className="flex flex-col gap-3 min-h-0">
@@ -524,12 +600,29 @@ function PackListView({
                     <span className="text-xs text-muted-foreground/50">
                       {pack.addons.length} addon{pack.addons.length !== 1 ? "s" : ""}
                     </span>
-                    {pack.voteCount > 0 && (
-                      <span className="flex items-center gap-0.5 text-xs text-muted-foreground/50">
-                        <HeartIcon className="size-3" />
-                        {pack.voteCount}
-                      </span>
-                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onVote(pack.id);
+                      }}
+                      title={
+                        authUser ? (pack.userVoted ? "Remove vote" : "Upvote") : "Sign in to vote"
+                      }
+                      className={cn(
+                        "flex items-center gap-0.5 text-xs rounded-md px-1.5 py-0.5 transition-all duration-200",
+                        pack.userVoted
+                          ? "text-[#c4a44a] bg-[#c4a44a]/[0.08] hover:bg-[#c4a44a]/[0.15]"
+                          : "text-muted-foreground/50 hover:text-[#c4a44a]/70 hover:bg-white/[0.04]"
+                      )}
+                    >
+                      <HeartIcon
+                        className={cn(
+                          "size-3 transition-transform duration-200",
+                          pack.userVoted && "fill-[#c4a44a] scale-110"
+                        )}
+                      />
+                      {pack.voteCount > 0 && pack.voteCount}
+                    </button>
                     {!pack.isAnonymous && pack.authorName && (
                       <span className="text-xs text-muted-foreground/40 ml-auto">
                         by {pack.authorName}
@@ -576,6 +669,8 @@ function PackDetailView({
   installProgress,
   selectedAddons,
   onToggleAddon,
+  onVote,
+  authUser,
 }: {
   pack: Pack | null;
   loading: boolean;
@@ -583,6 +678,8 @@ function PackDetailView({
   installProgress: { completed: number; failed: number; total: number } | null;
   selectedAddons: Set<number>;
   onToggleAddon: (esouiId: number, required: boolean) => void;
+  onVote: (packId: string) => void;
+  authUser: AuthUser | null;
 }) {
   if (loading || !pack) {
     return (
@@ -609,11 +706,26 @@ function PackDetailView({
         {!pack.isAnonymous && (
           <span className="text-xs text-muted-foreground/50">by {pack.authorName}</span>
         )}
-        {pack.voteCount > 0 && (
-          <span className="flex items-center gap-0.5 text-xs text-muted-foreground/50">
-            <HeartIcon className="size-3" /> {pack.voteCount}
-          </span>
-        )}
+        <button
+          onClick={() => onVote(pack.id)}
+          title={
+            authUser ? (pack.userVoted ? "Remove vote" : "Upvote this pack") : "Sign in to vote"
+          }
+          className={cn(
+            "flex items-center gap-1 text-xs rounded-md px-2 py-1 transition-all duration-200 ml-auto",
+            pack.userVoted
+              ? "text-[#c4a44a] bg-[#c4a44a]/[0.08] hover:bg-[#c4a44a]/[0.15]"
+              : "text-muted-foreground/50 hover:text-[#c4a44a]/70 hover:bg-white/[0.04]"
+          )}
+        >
+          <HeartIcon
+            className={cn(
+              "size-3.5 transition-transform duration-200",
+              pack.userVoted && "fill-[#c4a44a] scale-110"
+            )}
+          />
+          {pack.voteCount > 0 ? pack.voteCount : "Vote"}
+        </button>
       </div>
 
       {/* Install progress bar */}

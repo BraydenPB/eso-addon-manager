@@ -43,6 +43,7 @@ export interface Pack {
   addons: PackAddonEntry[];
   builds?: BuildReference[];
   rosters?: RosterReference[];
+  voteCount: number;
 }
 
 // ── Index (lightweight listing) ────────────────────────────────────
@@ -55,7 +56,20 @@ export interface PackIndexItem {
   addonCount: number;
   buildCount: number;
   rosterCount: number;
+  voteCount: number;
   updatedAt: string;
+}
+
+// ── Vote tracking ─────────────────────────────────────────────────
+export interface VoteRecord {
+  userId: string;
+  packId: string;
+  votedAt: string;
+}
+
+export interface VoteResponse {
+  voted: boolean;
+  voteCount: number;
 }
 
 export interface PackIndex {

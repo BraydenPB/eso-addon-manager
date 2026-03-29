@@ -1,7 +1,8 @@
-import type { Env, Pack, PackIndex, PackIndexItem } from "./types";
+import type { Env, Pack, PackIndex, PackIndexItem, VoteRecord } from "./types";
 
 const PACK_PREFIX = "pack:";
 const INDEX_KEY = "index:packs";
+const VOTE_PREFIX = "vote:";
 
 export async function getPackIndex(env: Env): Promise<PackIndex | null> {
   return env.ESO_PACKS.get<PackIndex>(INDEX_KEY, "json");
@@ -32,6 +33,42 @@ export function packToIndexItem(pack: Pack): PackIndexItem {
     addonCount: pack.addons.length,
     buildCount: pack.builds?.length ?? 0,
     rosterCount: pack.rosters?.length ?? 0,
+    voteCount: pack.voteCount ?? 0,
     updatedAt: pack.metadata.updatedAt,
   };
+}
+
+// ── Vote helpers ──────────────────────────────────────────────────
+
+function voteKey(packId: string, userId: string): string {
+  return `${VOTE_PREFIX}${packId}:${userId}`;
+}
+
+export async function getVote(
+  env: Env,
+  packId: string,
+  userId: string,
+): Promise<VoteRecord | null> {
+  return env.ESO_PACKS.get<VoteRecord>(voteKey(packId, userId), "json");
+}
+
+export async function putVote(
+  env: Env,
+  packId: string,
+  userId: string,
+): Promise<void> {
+  const record: VoteRecord = {
+    userId,
+    packId,
+    votedAt: new Date().toISOString(),
+  };
+  await env.ESO_PACKS.put(voteKey(packId, userId), JSON.stringify(record));
+}
+
+export async function deleteVote(
+  env: Env,
+  packId: string,
+  userId: string,
+): Promise<void> {
+  await env.ESO_PACKS.delete(voteKey(packId, userId));
 }
