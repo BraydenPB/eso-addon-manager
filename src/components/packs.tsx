@@ -9,7 +9,11 @@ import type {
   EsouiSearchResult,
   AddonManifest,
   AuthUser,
+  ShareCodeResponse,
+  SharedPack,
+  EsoPackFile,
 } from "../types";
+import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 
 interface VoteResponse {
   voted: boolean;
@@ -50,6 +54,12 @@ import {
   PencilIcon,
   RefreshCwIcon,
   SparklesIcon,
+  ShareIcon,
+  CopyIcon,
+  ImportIcon,
+  FileDownIcon,
+  FileUpIcon,
+  ClockIcon,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -62,11 +72,12 @@ interface PacksProps {
   onClose: () => void;
   onRefresh: () => void;
   initialPackId?: string | null;
+  initialShareCode?: string | null;
 }
 
 type PackTypeFilter = "all" | "addon-pack" | "build-pack" | "roster-pack";
 type SortOption = "votes" | "newest" | "updated";
-type TabMode = "browse" | "create";
+type TabMode = "browse" | "create" | "import";
 
 const TYPE_LABELS: Record<string, string> = {
   "addon-pack": "Addon Pack",
@@ -131,8 +142,9 @@ export function Packs({
   onClose,
   onRefresh,
   initialPackId,
+  initialShareCode,
 }: PacksProps) {
-  const [tab, setTab] = useState<TabMode>("browse");
+  const [tab, setTab] = useState<TabMode>(initialShareCode ? "import" : "browse");
   const [packs, setPacks] = useState<Pack[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -162,6 +174,18 @@ export function Packs({
   const [createAddons, setCreateAddons] = useState<PackAddonEntry[]>([]);
   const [createAnonymous, setCreateAnonymous] = useState(false);
   const [editingPackId, setEditingPackId] = useState<string | null>(null);
+
+  // Sharing state
+  const [shareResult, setShareResult] = useState<ShareCodeResponse | null>(null);
+  const [generatingShare, setGeneratingShare] = useState(false);
+  const [showShareSection, setShowShareSection] = useState(false);
+  const [copiedField, setCopiedField] = useState<"code" | "link" | null>(null);
+
+  // Import state
+  const [shareCodeInput, setShareCodeInput] = useState(initialShareCode ?? "");
+  const [resolvingCode, setResolvingCode] = useState(false);
+  const [importedPack, setImportedPack] = useState<SharedPack | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   // Installation — selected addons (esouiId set)
   const [installing, setInstalling] = useState(false);
@@ -279,6 +303,8 @@ export function Packs({
     setConfirmInstall(false);
     setInstalling(false);
     setInstallProgress(null);
+    setShowShareSection(false);
+    setShareResult(null);
   };
 
   const resetCreateForm = useCallback(() => {
@@ -291,6 +317,169 @@ export function Packs({
     setCreateStep("details");
     setEditingPackId(null);
   }, []);
+
+  // ── Share code generation ──────────────────────────────────────────
+  const handleGenerateShareCode = async (pack: Pack) => {
+    setGeneratingShare(true);
+    setShareResult(null);
+    try {
+      const result = await invokeOrThrow<ShareCodeResponse>("create_share_code", {
+        payload: {
+          title: pack.title,
+          description: pack.description,
+          packType: pack.packType,
+          tags: pack.tags,
+          addons: pack.addons,
+        },
+      });
+      setShareResult(result);
+    } catch (e) {
+      toast.error(`Failed to generate share code: ${getTauriErrorMessage(e)}`);
+    } finally {
+      setGeneratingShare(false);
+    }
+  };
+
+  const handleCopyToClipboard = async (text: string, field: "code" | "link") => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      toast.error("Failed to copy to clipboard");
+    }
+  };
+
+  const handleExportPackFile = async (pack: Pack) => {
+    const safeName = pack.title
+      .replace(/[^a-zA-Z0-9-_ ]/g, "")
+      .trim()
+      .replace(/\s+/g, "-");
+    const path = await saveFileDialog({
+      defaultPath: `${safeName}.esopack`,
+      filters: [{ name: "ESO Pack", extensions: ["esopack"] }],
+    });
+    if (!path) return;
+
+    try {
+      await invokeOrThrow("export_pack_file", {
+        pack: {
+          format: "esopack",
+          version: 1,
+          pack: {
+            title: pack.title,
+            description: pack.description,
+            packType: pack.packType,
+            tags: pack.tags,
+            addons: pack.addons,
+          },
+          sharedAt: new Date().toISOString(),
+          sharedBy: authUser?.userName ?? "Anonymous",
+        },
+        path,
+      });
+      toast.success("Pack exported successfully");
+    } catch (e) {
+      toast.error(`Failed to export pack: ${getTauriErrorMessage(e)}`);
+    }
+  };
+
+  // ── Import handlers ──────────────────────────────────────────────
+  const handleResolveShareCode = async (code: string) => {
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) return;
+
+    setResolvingCode(true);
+    setImportError(null);
+    setImportedPack(null);
+    try {
+      const pack = await invokeOrThrow<SharedPack>("resolve_share_code", { code: trimmed });
+      setImportedPack(pack);
+    } catch (e) {
+      setImportError(getTauriErrorMessage(e));
+    } finally {
+      setResolvingCode(false);
+    }
+  };
+
+  const handleImportFile = async () => {
+    const path = await openFileDialog({
+      filters: [{ name: "ESO Pack", extensions: ["esopack"] }],
+      multiple: false,
+    });
+    if (!path) return;
+
+    setImportError(null);
+    setImportedPack(null);
+    try {
+      const result = await invokeOrThrow<EsoPackFile>("import_pack_file", { path });
+      setImportedPack({
+        title: result.pack.title,
+        description: result.pack.description,
+        packType: result.pack.packType,
+        tags: result.pack.tags,
+        addons: result.pack.addons,
+        sharedBy: result.sharedBy,
+        sharedAt: result.sharedAt,
+        expiresAt: "",
+      });
+    } catch (e) {
+      setImportError(getTauriErrorMessage(e));
+    }
+  };
+
+  // Auto-resolve share code from deep link
+  useEffect(() => {
+    if (initialShareCode) {
+      setShareCodeInput(initialShareCode);
+      setTab("import");
+      handleResolveShareCode(initialShareCode);
+    }
+  }, [initialShareCode]);
+
+  // Selected addons for imported pack preview
+  const importedPackAddonsToInstall = useMemo(() => {
+    if (!importedPack) return [];
+    return importedPack.addons
+      .filter((a) => a.required)
+      .filter((a) => !installedEsouiIds.has(a.esouiId));
+  }, [importedPack, installedEsouiIds]);
+
+  const handleInstallImportedPack = async () => {
+    if (!importedPack || importedPackAddonsToInstall.length === 0) return;
+
+    setInstalling(true);
+    setInstallProgress({ completed: 0, failed: 0, total: importedPackAddonsToInstall.length });
+
+    let completed = 0;
+    let failed = 0;
+    const installed: string[] = [];
+
+    for (const addon of importedPackAddonsToInstall) {
+      try {
+        const result = await invokeOrThrow<InstallResult>("install_addon", {
+          esouiId: addon.esouiId,
+          addonsPath,
+        });
+        completed++;
+        installed.push(...result.installedFolders);
+      } catch {
+        failed++;
+      }
+      setInstallProgress({ completed, failed, total: importedPackAddonsToInstall.length });
+    }
+
+    setInstalling(false);
+    setInstallProgress(null);
+
+    if (installed.length > 0) {
+      onRefresh();
+      toast.success(`Installed ${installed.length} addon${installed.length !== 1 ? "s" : ""}`);
+    }
+    if (failed > 0) {
+      toast.error(`${failed} addon${failed !== 1 ? "s" : ""} failed to install`);
+    }
+  };
 
   const handleStartEditing = useCallback((pack: Pack) => {
     setCreateTitle(decodeHtml(pack.title));
@@ -491,11 +680,16 @@ export function Packs({
               <div
                 className="absolute top-0.5 bottom-0.5 rounded-md bg-white/[0.08] shadow-sm transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                 style={{
-                  left: tab === "browse" ? "2px" : "calc(50% + 0px)",
-                  width: "calc(50% - 2px)",
+                  left:
+                    tab === "browse"
+                      ? "2px"
+                      : tab === "create"
+                        ? "calc(33.333% + 0px)"
+                        : "calc(66.666% - 2px)",
+                  width: "calc(33.333% - 2px)",
                 }}
               />
-              {(["browse", "create"] as TabMode[]).map((t) => (
+              {(["browse", "create", "import"] as TabMode[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -506,7 +700,13 @@ export function Packs({
                       : "text-muted-foreground/60 hover:text-muted-foreground"
                   )}
                 >
-                  {t === "browse" ? "Browse Packs" : editingPackId ? "Edit Pack" : "Create Pack"}
+                  {t === "browse"
+                    ? "Browse"
+                    : t === "create"
+                      ? editingPackId
+                        ? "Edit Pack"
+                        : "Create"
+                      : "Import"}
                 </button>
               ))}
             </div>
@@ -540,6 +740,18 @@ export function Packs({
             authUser={authUser}
             canEdit={canEditSelectedPack}
             onEdit={() => selectedPack && handleStartEditing(selectedPack)}
+            showShareSection={showShareSection}
+            onToggleShare={() => {
+              setShowShareSection((prev) => !prev);
+              setShareResult(null);
+              setCopiedField(null);
+            }}
+            shareResult={shareResult}
+            generatingShare={generatingShare}
+            copiedField={copiedField}
+            onGenerateShareCode={() => selectedPack && handleGenerateShareCode(selectedPack)}
+            onCopyToClipboard={handleCopyToClipboard}
+            onExportFile={() => selectedPack && handleExportPackFile(selectedPack)}
           />
         ) : tab === "browse" ? (
           <PackListView
@@ -561,7 +773,7 @@ export function Packs({
             votingPacks={votingPacks}
             authUser={authUser}
           />
-        ) : (
+        ) : tab === "create" ? (
           <PackCreateView
             installedAddons={installedAddons}
             authUser={authUser}
@@ -596,6 +808,26 @@ export function Packs({
                   }
                 : undefined
             }
+          />
+        ) : (
+          <PackImportView
+            shareCodeInput={shareCodeInput}
+            onShareCodeInputChange={setShareCodeInput}
+            resolvingCode={resolvingCode}
+            importedPack={importedPack}
+            importError={importError}
+            installing={installing}
+            installProgress={installProgress}
+            installedEsouiIds={installedEsouiIds}
+            importedPackAddonsToInstall={importedPackAddonsToInstall}
+            onResolveCode={handleResolveShareCode}
+            onImportFile={handleImportFile}
+            onInstall={handleInstallImportedPack}
+            onClear={() => {
+              setImportedPack(null);
+              setImportError(null);
+              setShareCodeInput("");
+            }}
           />
         )}
 
@@ -911,6 +1143,14 @@ function PackDetailView({
   authUser,
   canEdit,
   onEdit,
+  showShareSection,
+  onToggleShare,
+  shareResult,
+  generatingShare,
+  copiedField,
+  onGenerateShareCode,
+  onCopyToClipboard,
+  onExportFile,
 }: {
   pack: Pack | null;
   loading: boolean;
@@ -925,6 +1165,14 @@ function PackDetailView({
   authUser: AuthUser | null;
   canEdit: boolean;
   onEdit: () => void;
+  showShareSection: boolean;
+  onToggleShare: () => void;
+  shareResult: ShareCodeResponse | null;
+  generatingShare: boolean;
+  copiedField: "code" | "link" | null;
+  onGenerateShareCode: () => void;
+  onCopyToClipboard: (text: string, field: "code" | "link") => Promise<void>;
+  onExportFile: () => void;
 }) {
   if (loading || !pack) {
     return (
@@ -953,12 +1201,23 @@ function PackDetailView({
         {!pack.isAnonymous && (
           <span className="text-xs text-muted-foreground/50">by {decodeHtml(pack.authorName)}</span>
         )}
-        {canEdit && (
-          <Button variant="outline" size="sm" onClick={onEdit} className="ml-auto">
-            <PencilIcon className="size-3.5 mr-1.5" />
-            Edit
+        <div className="flex items-center gap-1.5 ml-auto">
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <PencilIcon className="size-3.5 mr-1.5" />
+              Edit
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onToggleShare}
+            className={cn(showShareSection && "border-[#c4a44a]/30 bg-[#c4a44a]/[0.06]")}
+          >
+            <ShareIcon className="size-3.5 mr-1.5" />
+            Share
           </Button>
-        )}
+        </div>
         <button
           onClick={() => onVote(pack.id)}
           disabled={votingPacks.has(pack.id)}
@@ -983,6 +1242,75 @@ function PackDetailView({
           <span>{pack.voteCount > 0 ? pack.voteCount : 0}</span>
         </button>
       </div>
+
+      {/* Share section */}
+      {showShareSection && (
+        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-3">
+          <SectionHeader>Share Privately</SectionHeader>
+
+          {shareResult ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded-md bg-white/[0.05] px-3 py-2 text-center font-mono text-lg font-bold tracking-[0.3em] text-[#c4a44a]">
+                  {shareResult.code}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onCopyToClipboard(shareResult.code, "code")}
+                >
+                  {copiedField === "code" ? (
+                    <CheckIcon className="size-3.5 text-emerald-400" />
+                  ) : (
+                    <CopyIcon className="size-3.5" />
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded-md bg-white/[0.05] px-3 py-1.5 text-xs text-muted-foreground/60">
+                  {shareResult.deepLink}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onCopyToClipboard(shareResult.deepLink, "link")}
+                >
+                  {copiedField === "link" ? (
+                    <CheckIcon className="size-3.5 text-emerald-400" />
+                  ) : (
+                    <CopyIcon className="size-3.5" />
+                  )}
+                </Button>
+              </div>
+              <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground/40">
+                <ClockIcon className="size-3" />
+                Expires in 7 days
+              </p>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onGenerateShareCode}
+                disabled={generatingShare}
+                className="flex-1"
+              >
+                {generatingShare ? (
+                  <Loader2Icon className="size-3.5 animate-spin mr-1.5" />
+                ) : (
+                  <ShareIcon className="size-3.5 mr-1.5" />
+                )}
+                Generate Code
+              </Button>
+              <Button variant="outline" size="sm" onClick={onExportFile} className="flex-1">
+                <FileDownIcon className="size-3.5 mr-1.5" />
+                Export File
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Install progress bar */}
       {installing && installProgress && (
@@ -1840,6 +2168,214 @@ function PackCreateView({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Import View ──────────────────────────────────────────────────────────
+
+function PackImportView({
+  shareCodeInput,
+  onShareCodeInputChange,
+  resolvingCode,
+  importedPack,
+  importError,
+  installing,
+  installProgress,
+  installedEsouiIds,
+  importedPackAddonsToInstall,
+  onResolveCode,
+  onImportFile,
+  onInstall,
+  onClear,
+}: {
+  shareCodeInput: string;
+  onShareCodeInputChange: (value: string) => void;
+  resolvingCode: boolean;
+  importedPack: SharedPack | null;
+  importError: string | null;
+  installing: boolean;
+  installProgress: { completed: number; failed: number; total: number } | null;
+  installedEsouiIds: Set<number>;
+  importedPackAddonsToInstall: PackAddonEntry[];
+  onResolveCode: (code: string) => void;
+  onImportFile: () => void;
+  onInstall: () => void;
+  onClear: () => void;
+}) {
+  if (importedPack) {
+    const requiredAddons = importedPack.addons.filter((a) => a.required);
+    const optionalAddons = importedPack.addons.filter((a) => !a.required);
+
+    return (
+      <div className="flex flex-col gap-3 overflow-y-auto max-h-[400px]">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{importedPack.title}</h3>
+          <Button variant="ghost" size="sm" onClick={onClear}>
+            <XIcon className="size-3.5 mr-1" />
+            Clear
+          </Button>
+        </div>
+
+        {importedPack.description && (
+          <p className="text-sm text-muted-foreground">{importedPack.description}</p>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <InfoPill color="muted">
+            {TYPE_LABELS[importedPack.packType] ?? importedPack.packType}
+          </InfoPill>
+          {importedPack.tags.map((tag) => (
+            <InfoPill key={tag} color={TAG_COLORS[tag] ?? "muted"}>
+              {tag}
+            </InfoPill>
+          ))}
+          {importedPack.sharedBy && (
+            <span className="text-xs text-muted-foreground/50">
+              shared by {importedPack.sharedBy}
+            </span>
+          )}
+        </div>
+
+        {/* Install progress */}
+        {installing && installProgress && (
+          <div className="rounded-lg border border-[#c4a44a]/20 bg-[#c4a44a]/[0.04] p-3">
+            <div className="flex items-center justify-between text-sm mb-2">
+              <span className="text-[#c4a44a] font-medium">
+                Installing {installProgress.completed + installProgress.failed}/
+                {installProgress.total}
+              </span>
+              {installProgress.failed > 0 && (
+                <span className="text-red-400 text-xs">{installProgress.failed} failed</span>
+              )}
+            </div>
+            <div className="h-1 rounded-full bg-white/[0.06]">
+              <div
+                className="h-full rounded-full bg-[#c4a44a] transition-all duration-300 ease-out"
+                style={{
+                  width: `${((installProgress.completed + installProgress.failed) / installProgress.total) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Addon list */}
+        {requiredAddons.length > 0 && (
+          <div>
+            <SectionHeader>Required ({requiredAddons.length})</SectionHeader>
+            <div className="mt-1.5 space-y-1">
+              {requiredAddons.map((addon) => (
+                <div
+                  key={addon.esouiId}
+                  className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02]"
+                >
+                  <span className="text-sm">{addon.name}</span>
+                  {installedEsouiIds.has(addon.esouiId) ? (
+                    <span className="text-[10px] text-emerald-400/60 font-medium">Installed</span>
+                  ) : (
+                    <span className="text-[10px] text-[#c4a44a]/60 font-medium">New</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {optionalAddons.length > 0 && (
+          <div>
+            <SectionHeader>Optional ({optionalAddons.length})</SectionHeader>
+            <div className="mt-1.5 space-y-1">
+              {optionalAddons.map((addon) => (
+                <div
+                  key={addon.esouiId}
+                  className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02]"
+                >
+                  <span className="text-sm text-muted-foreground">{addon.name}</span>
+                  {installedEsouiIds.has(addon.esouiId) && (
+                    <span className="text-[10px] text-emerald-400/60 font-medium">Installed</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <Button
+          onClick={onInstall}
+          disabled={installing || importedPackAddonsToInstall.length === 0}
+          className="w-full"
+        >
+          {installing ? (
+            <>
+              <Loader2Icon className="size-4 animate-spin mr-1.5" />
+              Installing...
+            </>
+          ) : importedPackAddonsToInstall.length === 0 ? (
+            <>
+              <CheckIcon className="size-4 mr-1.5" />
+              All Installed
+            </>
+          ) : (
+            <>
+              <DownloadIcon className="size-4 mr-1.5" />
+              Install {importedPackAddonsToInstall.length} New Addon
+              {importedPackAddonsToInstall.length !== 1 ? "s" : ""}
+            </>
+          )}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 py-4">
+      <div className="text-center space-y-1">
+        <ImportIcon className="size-8 mx-auto text-muted-foreground/30" />
+        <p className="text-sm text-muted-foreground">Import a pack shared by a friend</p>
+      </div>
+
+      {/* Share code input */}
+      <div className="space-y-2">
+        <SectionHeader>Share Code</SectionHeader>
+        <div className="flex gap-2">
+          <Input
+            placeholder="e.g. HK7M3P"
+            value={shareCodeInput}
+            onChange={(e) => onShareCodeInputChange(e.target.value.toUpperCase())}
+            maxLength={6}
+            className="font-mono tracking-widest text-center uppercase"
+          />
+          <Button
+            onClick={() => onResolveCode(shareCodeInput)}
+            disabled={resolvingCode || shareCodeInput.trim().length < 6}
+          >
+            {resolvingCode ? (
+              <Loader2Icon className="size-4 animate-spin" />
+            ) : (
+              <SearchIcon className="size-4" />
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {importError && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.04] p-3">
+          <AlertCircleIcon className="size-4 text-red-400 shrink-0 mt-0.5" />
+          <p className="text-sm text-red-300">{importError}</p>
+        </div>
+      )}
+
+      <div className="border-t border-white/[0.06]" />
+
+      {/* File import */}
+      <div className="space-y-2">
+        <SectionHeader>Import from File</SectionHeader>
+        <Button variant="outline" onClick={onImportFile} className="w-full">
+          <FileUpIcon className="size-4 mr-1.5" />
+          Open .esopack File
+        </Button>
+      </div>
     </div>
   );
 }

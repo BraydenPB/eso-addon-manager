@@ -2418,3 +2418,291 @@ pub async fn update_pack(
     .await
     .map_err(|e| format!("Task failed: {}", e))?
 }
+
+// ── Private Sharing ─────────────────────────────────────────────────────────
+
+/// Base URL for the share worker (separate from the pack hub).
+fn share_worker_url() -> &'static str {
+    static URL: OnceLock<String> = OnceLock::new();
+    URL.get_or_init(|| {
+        std::env::var("SHARE_WORKER_URL")
+            .unwrap_or_else(|_| "https://eso-packs-worker.eso-toolkit.workers.dev".to_string())
+    })
+}
+
+fn share_worker_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .user_agent(format!("ESOAddonManager/{}", env!("CARGO_PKG_VERSION")))
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .expect("failed to build share worker HTTP client")
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharePackPayload {
+    pub title: String,
+    pub description: String,
+    pub pack_type: String,
+    pub tags: Vec<String>,
+    pub addons: Vec<PackAddonEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareCodeResponse {
+    pub code: String,
+    pub expires_at: String,
+    pub deep_link: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedPack {
+    pub title: String,
+    pub description: String,
+    pub pack_type: String,
+    pub tags: Vec<String>,
+    pub addons: Vec<PackAddonEntry>,
+    pub shared_by: String,
+    pub shared_at: String,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShareResolveResponse {
+    pack: ShareResolvedPack,
+    shared_by: String,
+    shared_at: String,
+    expires_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShareResolvedPack {
+    title: String,
+    description: String,
+    pack_type: String,
+    tags: Vec<String>,
+    addons: Vec<PackAddonEntry>,
+}
+
+/// Validate a share code (6 chars from the unambiguous alphabet).
+fn validate_share_code(code: &str) -> Result<(), String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$").unwrap());
+    if !re.is_match(code) {
+        return Err("Invalid share code format.".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_share_code(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+    payload: SharePackPayload,
+) -> Result<ShareCodeResponse, String> {
+    let access_token = {
+        let tokens = {
+            let guard = state
+                .0
+                .lock()
+                .map_err(|e| format!("Auth lock poisoned: {}", e))?;
+            guard.clone()
+        };
+
+        let Some(tokens) = tokens else {
+            return Err("Not signed in. Please sign in first.".to_string());
+        };
+
+        match tokio::task::spawn_blocking({
+            let tokens = tokens.clone();
+            move || auth::ensure_valid_token(&tokens)
+        })
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+        {
+            Ok(Some(new_tokens)) => {
+                let token = new_tokens.access_token.clone();
+                save_auth_tokens(&app, &new_tokens);
+                *state
+                    .0
+                    .lock()
+                    .map_err(|e| format!("Auth lock poisoned: {}", e))? = Some(new_tokens);
+                token
+            }
+            Ok(None) => tokens.access_token.clone(),
+            Err(e) => {
+                *state
+                    .0
+                    .lock()
+                    .map_err(|e| format!("Auth lock poisoned: {}", e))? = None;
+                return Err(e);
+            }
+        }
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let client = share_worker_client();
+        let url = format!("{}/shares", share_worker_url());
+
+        let body = serde_json::json!({
+            "title": payload.title,
+            "description": payload.description,
+            "packType": payload.pack_type,
+            "tags": payload.tags,
+            "addons": payload.addons,
+        });
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .map_err(|e| {
+                if e.is_connect() || e.is_timeout() {
+                    "Could not connect to share service. Check your internet connection."
+                        .to_string()
+                } else {
+                    format!("Network error: {}", e)
+                }
+            })?;
+
+        match response.status().as_u16() {
+            200 | 201 => {}
+            401 => return Err("Session expired. Please sign in again.".to_string()),
+            429 => {
+                return Err(
+                    "Maximum share codes reached. Wait for existing codes to expire.".to_string(),
+                )
+            }
+            status => {
+                let body = response.text().unwrap_or_default();
+                return Err(format!("Share service returned HTTP {} — {}", status, body));
+            }
+        }
+
+        let result: ShareCodeResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        Ok(result)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn resolve_share_code(code: String) -> Result<SharedPack, String> {
+    validate_share_code(&code)?;
+
+    tokio::task::spawn_blocking(move || {
+        let client = share_worker_client();
+        let url = format!("{}/shares/{}", share_worker_url(), code);
+
+        let response = client.get(&url).send().map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                "Could not connect to share service. Check your internet connection.".to_string()
+            } else {
+                format!("Network error: {}", e)
+            }
+        })?;
+
+        match response.status().as_u16() {
+            200 => {}
+            400 => return Err("Invalid share code format.".to_string()),
+            404 => return Err("Share code not found or expired.".to_string()),
+            status => {
+                let body = response.text().unwrap_or_default();
+                return Err(format!("Share service returned HTTP {} — {}", status, body));
+            }
+        }
+
+        let result: ShareResolveResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        Ok(SharedPack {
+            title: result.pack.title,
+            description: result.pack.description,
+            pack_type: result.pack.pack_type,
+            tags: result.pack.tags,
+            addons: result.pack.addons,
+            shared_by: result.shared_by,
+            shared_at: result.shared_at,
+            expires_at: result.expires_at,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+// ── Pack Export / Import (.esopack files) ───────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EsoPackFile {
+    pub format: String,
+    pub version: u32,
+    pub pack: EsoPackData,
+    pub shared_at: String,
+    pub shared_by: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EsoPackData {
+    pub title: String,
+    pub description: String,
+    pub pack_type: String,
+    pub tags: Vec<String>,
+    pub addons: Vec<PackAddonEntry>,
+}
+
+#[tauri::command]
+pub fn export_pack_file(pack: EsoPackFile, path: String) -> Result<(), String> {
+    let file_path = PathBuf::from(&path);
+
+    if path.contains("..") {
+        return Err("Invalid file path.".to_string());
+    }
+
+    let json = serde_json::to_string_pretty(&pack)
+        .map_err(|e| format!("Failed to serialize pack: {}", e))?;
+
+    fs::write(&file_path, json).map_err(|e| format!("Failed to write file: {}", e))
+}
+
+#[tauri::command]
+pub fn import_pack_file(path: String) -> Result<EsoPackFile, String> {
+    let file_path = PathBuf::from(&path);
+
+    if !file_path.exists() {
+        return Err("File not found.".to_string());
+    }
+
+    let contents =
+        fs::read_to_string(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let pack: EsoPackFile =
+        serde_json::from_str(&contents).map_err(|e| format!("Invalid .esopack file: {}", e))?;
+
+    if pack.format != "esopack" {
+        return Err("Not a valid .esopack file (wrong format field).".to_string());
+    }
+
+    if pack.version != 1 {
+        return Err(format!(
+            "Unsupported .esopack version {}. Please update the app.",
+            pack.version
+        ));
+    }
+
+    Ok(pack)
+}

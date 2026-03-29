@@ -3,6 +3,7 @@ import { getPack, getPackIndex, packToIndexItem, putPack, putPackIndex, getVote,
 import { corsHeaders, handlePreflight } from "./cors";
 import { validatePack } from "./validate";
 import { SEED_PACKS } from "./seed";
+import { handleCreateShare, handleResolveShare } from "./shares";
 
 function json(request: Request, data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -298,6 +299,18 @@ export default {
       if (method === "GET") return handleGetPack(request, env, id);
       if (method === "PUT") return handleUpdatePack(request, env, id);
       if (method === "DELETE") return handleDeletePack(request, env, id);
+    }
+
+    // ── Share code routes ──────────────────────────────────────────
+    // POST /shares — create a share code
+    if (method === "POST" && pathname === "/shares") {
+      return handleCreateShare(request, env);
+    }
+
+    // GET /shares/:code — resolve a share code
+    const shareMatch = pathname.match(/^\/shares\/([23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6})$/);
+    if (shareMatch && method === "GET") {
+      return handleResolveShare(request, env, shareMatch[1]);
     }
 
     // POST /admin/seed — temporary dev-only seeding route

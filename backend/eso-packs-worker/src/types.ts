@@ -82,6 +82,30 @@ export interface ValidationError {
   message: string;
 }
 
+// ── Share types ───────────────────────────────────────────────────
+export interface SharePackData {
+  title: string;
+  description: string;
+  packType: PackType;
+  tags: string[];
+  addons: PackAddonEntry[];
+}
+
+export interface ShareRecord {
+  code: string;
+  pack: SharePackData;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface ShareCodeResponse {
+  code: string;
+  expiresAt: string;
+  deepLink: string;
+}
+
 // ── Env bindings ───────────────────────────────────────────────────
 export interface Env {
   ESO_PACKS: KVNamespace;

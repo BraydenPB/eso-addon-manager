@@ -21,6 +21,7 @@ interface AppDialogsProps {
   addonsPath: string;
   authUser: AuthUser | null;
   deepLinkPackId: string | null;
+  deepLinkShareCode: string | null;
   onAuthChange: (user: AuthUser | null) => void;
   onCheckForAppUpdate: () => void;
   onCloseDialog: () => void;
@@ -35,6 +36,7 @@ export function AppDialogs({
   addonsPath,
   authUser,
   deepLinkPackId,
+  deepLinkShareCode,
   onAuthChange,
   onCheckForAppUpdate,
   onCloseDialog,
@@ -53,6 +55,7 @@ export function AppDialogs({
           onClose={onCloseDialog}
           onRefresh={onRefresh}
           initialPackId={deepLinkPackId}
+          initialShareCode={deepLinkShareCode}
         />
       )}
 

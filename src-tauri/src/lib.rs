@@ -24,10 +24,27 @@ pub struct ApprovedAddonsPath {
 
 pub struct AllowedAddonsPath(pub Mutex<Option<ApprovedAddonsPath>>);
 
-/// Extract a pack ID from a deep link URL.
-/// Matches `eso-addon-manager://pack/{id}` or `eso-addon-manager://packs/{id}`.
-fn parse_deep_link(url: &str) -> Option<String> {
+/// Actions that can be triggered by a deep link URL.
+enum DeepLinkAction {
+    /// Open a pack by ID: `eso-addon-manager://pack/{id}`
+    Pack(String),
+    /// Import a shared pack by code: `eso-addon-manager://share/{code}`
+    Share(String),
+}
+
+/// Extract an action from a deep link URL.
+fn parse_deep_link(url: &str) -> Option<DeepLinkAction> {
     let url = url.trim();
+
+    // Share codes: eso-addon-manager://share/{code}
+    if let Some(rest) = url.strip_prefix("eso-addon-manager://share/") {
+        let code = rest.split(['/', '?', '#']).next()?.trim();
+        if !code.is_empty() {
+            return Some(DeepLinkAction::Share(code.to_string()));
+        }
+    }
+
+    // Pack IDs: eso-addon-manager://pack/{id} or eso-addon-manager://packs/{id}
     let path = url
         .strip_prefix("eso-addon-manager://pack/")
         .or_else(|| url.strip_prefix("eso-addon-manager://packs/"))?;
@@ -35,17 +52,24 @@ fn parse_deep_link(url: &str) -> Option<String> {
     if id.is_empty() {
         None
     } else {
-        Some(id.to_string())
+        Some(DeepLinkAction::Pack(id.to_string()))
     }
 }
 
-/// Emit a deep-link event to the frontend so it can open the pack dialog.
-fn emit_pack_deep_link(app: &tauri::AppHandle, pack_id: &str) {
+/// Focus the main window and emit the appropriate deep-link event.
+fn emit_deep_link(app: &tauri::AppHandle, action: &DeepLinkAction) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
     }
-    let _ = app.emit("deep-link-pack", pack_id);
+    match action {
+        DeepLinkAction::Pack(id) => {
+            let _ = app.emit("deep-link-pack", id.as_str());
+        }
+        DeepLinkAction::Share(code) => {
+            let _ = app.emit("deep-link-share", code.as_str());
+        }
+    }
 }
 
 pub fn run() {
@@ -67,8 +91,8 @@ pub fn run() {
             }
             // Check argv for deep link URLs (Windows/Linux pass them as CLI args)
             for arg in &argv {
-                if let Some(pack_id) = parse_deep_link(arg) {
-                    emit_pack_deep_link(app, &pack_id);
+                if let Some(action) = parse_deep_link(arg) {
+                    emit_deep_link(app, &action);
                     break;
                 }
             }
@@ -195,6 +219,10 @@ pub fn run() {
             commands::create_pack,
             commands::update_pack,
             commands::vote_pack,
+            commands::create_share_code,
+            commands::resolve_share_code,
+            commands::export_pack_file,
+            commands::import_pack_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

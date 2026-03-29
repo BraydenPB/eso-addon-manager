@@ -162,6 +162,40 @@ export interface PackPage {
   page: number;
 }
 
+// ── Private sharing types ────────────────────────────────────────────────
+export interface ShareCodeResponse {
+  code: string;
+  expiresAt: string;
+  deepLink: string;
+}
+
+export interface SharedPack {
+  title: string;
+  description: string;
+  packType: string;
+  tags: string[];
+  addons: PackAddonEntry[];
+  sharedBy: string;
+  sharedAt: string;
+  expiresAt: string;
+}
+
+export interface EsoPackFile {
+  format: string;
+  version: number;
+  pack: EsoPackData;
+  sharedAt: string;
+  sharedBy: string;
+}
+
+export interface EsoPackData {
+  title: string;
+  description: string;
+  packType: string;
+  tags: string[];
+  addons: PackAddonEntry[];
+}
+
 // ── Auth types ────────────────────────────────────────────────────────────
 export interface AuthUser {
   userId: string;
