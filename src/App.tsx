@@ -150,6 +150,8 @@ function App() {
   const checkForUpdates = useCallback(
     async (path: string, autoUpdate = false, notifyOnError = false) => {
       const seq = ++checkSeqRef.current;
+      setUpdatingAll(false);
+      setUpdateProgress(null);
       setCheckingUpdates(true);
       try {
         const results = await invokeOrThrow<UpdateCheckResult[]>("check_for_updates", {

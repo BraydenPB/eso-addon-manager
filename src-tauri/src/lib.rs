@@ -17,7 +17,12 @@ use tauri::{
 /// write operations validate the caller-supplied path against this
 /// value, preventing a compromised webview from targeting arbitrary
 /// filesystem locations.
-pub struct AllowedAddonsPath(pub Mutex<Option<PathBuf>>);
+pub struct ApprovedAddonsPath {
+    pub configured: PathBuf,
+    pub canonical: PathBuf,
+}
+
+pub struct AllowedAddonsPath(pub Mutex<Option<ApprovedAddonsPath>>);
 
 /// Extract a pack ID from a deep link URL.
 /// Matches `eso-addon-manager://pack/{id}` or `eso-addon-manager://packs/{id}`.

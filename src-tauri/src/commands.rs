@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 
 /// Validate that `addons_path` matches the approved path stored in managed state.
 /// Prevents a compromised webview from targeting arbitrary filesystem locations.
-fn canonicalize_addons_path(addons_path: &str) -> Result<PathBuf, String> {
+fn validate_addons_path(addons_path: &str) -> Result<(PathBuf, PathBuf), String> {
     let path = PathBuf::from(addons_path);
     if !path.is_dir() {
         return Err(format!("AddOns folder not found: {}", addons_path));
@@ -27,34 +27,38 @@ fn canonicalize_addons_path(addons_path: &str) -> Result<PathBuf, String> {
         return Err("Selected directory must be the ESO AddOns folder.".to_string());
     }
 
-    Ok(canonical)
+    Ok((path, canonical))
 }
 
 fn require_allowed_path(
     state: &tauri::State<'_, AllowedAddonsPath>,
     addons_path: &str,
 ) -> Result<PathBuf, String> {
-    let canonical = canonicalize_addons_path(addons_path)?;
+    let (_, canonical) = validate_addons_path(addons_path)?;
     let guard = state.0.lock().map_err(|_| "Internal error.".to_string())?;
-    let Some(allowed_canonical) = &*guard else {
+    let Some(allowed_path) = &*guard else {
         return Err("Addons path has not been initialized.".to_string());
     };
-    if canonical != *allowed_canonical {
+    if canonical != allowed_path.canonical {
         return Err("Addons path does not match the configured path.".to_string());
     }
-    Ok(canonical)
+    Ok(allowed_path.configured.clone())
 }
 
 /// Called by the frontend to register the approved addons directory.
-/// Stores the canonicalized path to avoid repeated canonicalization on every command.
+/// Stores both the configured and canonicalized paths so commands can validate
+/// symlink/junction targets without losing the configured ESO live directory.
 #[tauri::command]
 pub fn set_addons_path(
     state: tauri::State<'_, AllowedAddonsPath>,
     addons_path: String,
 ) -> Result<(), String> {
-    let canonical = canonicalize_addons_path(&addons_path)?;
+    let (configured, canonical) = validate_addons_path(&addons_path)?;
     let mut guard = state.0.lock().map_err(|_| "Internal error.".to_string())?;
-    *guard = Some(canonical);
+    *guard = Some(crate::ApprovedAddonsPath {
+        configured,
+        canonical,
+    });
     Ok(())
 }
 
