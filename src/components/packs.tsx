@@ -456,16 +456,30 @@ export function Packs({
     const installed: string[] = [];
 
     for (const addon of importedPackAddonsToInstall) {
-      try {
-        const result = await invokeOrThrow<InstallResult>("install_addon", {
-          esouiId: addon.esouiId,
-          addonsPath,
-        });
+      const info = await invokeResult<EsouiAddonInfo>("resolve_esoui_addon", {
+        input: String(addon.esouiId),
+      });
+      if (!info.ok) {
+        failed++;
+        setInstallProgress({ completed, failed, total: importedPackAddonsToInstall.length });
+        continue;
+      }
+
+      const result = await invokeResult<InstallResult>("install_addon", {
+        addonsPath,
+        downloadUrl: info.data.downloadUrl,
+        esouiId: addon.esouiId,
+        esouiTitle: info.data.title,
+        esouiVersion: info.data.version,
+      });
+
+      if (result.ok) {
         completed++;
-        installed.push(...result.installedFolders);
-      } catch {
+        installed.push(...result.data.installedFolders);
+      } else {
         failed++;
       }
+
       setInstallProgress({ completed, failed, total: importedPackAddonsToInstall.length });
     }
 

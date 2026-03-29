@@ -33,6 +33,11 @@ type ActiveDialog =
   | "characters"
   | null;
 
+interface PendingDeepLinkPayload {
+  packId: string | null;
+  shareCode: string | null;
+}
+
 function App() {
   const [addonsPath, setAddonsPath] = useState("");
   const [addons, setAddons] = useState<AddonManifest[]>([]);
@@ -126,6 +131,21 @@ function App() {
       })
       .catch((listenError) => {
         console.error("[tauri:deep-link-share]", listenError);
+      });
+
+    void invokeOrThrow<PendingDeepLinkPayload>("consume_initial_deep_link")
+      .then((payload) => {
+        if (disposed) return;
+        if (payload.packId) {
+          setDeepLinkPackId(payload.packId);
+          setActiveDialog("packs");
+        } else if (payload.shareCode) {
+          setDeepLinkShareCode(payload.shareCode);
+          setActiveDialog("packs");
+        }
+      })
+      .catch((invokeError) => {
+        console.error("[tauri:consume_initial_deep_link]", invokeError);
       });
 
     return () => {

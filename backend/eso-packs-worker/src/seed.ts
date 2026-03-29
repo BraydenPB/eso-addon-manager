@@ -12,6 +12,7 @@ export const SEED_PACKS: Pack[] = [
       "The core addons every trial group expects you to have. Covers mechanic alerts, DPS/ult sharing, and combat logging.",
     type: "addon-pack",
     tags: ["trial", "pve", "essential"],
+    voteCount: 0,
     metadata: {
       createdBy: "eso-addon-manager",
       createdAt: "2025-03-27T00:00:00Z",
@@ -70,6 +71,7 @@ export const SEED_PACKS: Pack[] = [
       "Addons tailored for trial healers: group frames, buff tracking, rez helpers, and setup management.",
     type: "addon-pack",
     tags: ["trial", "pve", "healer"],
+    voteCount: 0,
     metadata: {
       createdBy: "eso-addon-manager",
       createdAt: "2025-03-27T00:00:00Z",
@@ -136,6 +138,7 @@ export const SEED_PACKS: Pack[] = [
       "Everything a DPS player needs to start parsing and running trials. Includes combat tracking, weaving helpers, and buff monitors.",
     type: "addon-pack",
     tags: ["trial", "pve", "dps", "beginner"],
+    voteCount: 0,
     metadata: {
       createdBy: "eso-addon-manager",
       createdAt: "2025-03-27T00:00:00Z",

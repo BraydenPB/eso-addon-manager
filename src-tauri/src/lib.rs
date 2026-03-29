@@ -5,6 +5,7 @@ mod installer;
 mod manifest;
 mod metadata;
 
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{
@@ -25,12 +26,22 @@ pub struct ApprovedAddonsPath {
 pub struct AllowedAddonsPath(pub Mutex<Option<ApprovedAddonsPath>>);
 
 /// Actions that can be triggered by a deep link URL.
+#[derive(Clone)]
 enum DeepLinkAction {
     /// Open a pack by ID: `eso-addon-manager://pack/{id}`
     Pack(String),
     /// Import a shared pack by code: `eso-addon-manager://share/{code}`
     Share(String),
 }
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingDeepLinkPayload {
+    pub pack_id: Option<String>,
+    pub share_code: Option<String>,
+}
+
+pub struct PendingDeepLink(pub Mutex<PendingDeepLinkPayload>);
 
 /// Extract an action from a deep link URL.
 fn parse_deep_link(url: &str) -> Option<DeepLinkAction> {
@@ -72,6 +83,19 @@ fn emit_deep_link(app: &tauri::AppHandle, action: &DeepLinkAction) {
     }
 }
 
+fn pending_deep_link_payload(action: &DeepLinkAction) -> PendingDeepLinkPayload {
+    match action {
+        DeepLinkAction::Pack(id) => PendingDeepLinkPayload {
+            pack_id: Some(id.clone()),
+            share_code: None,
+        },
+        DeepLinkAction::Share(code) => PendingDeepLinkPayload {
+            pack_id: None,
+            share_code: Some(code.clone()),
+        },
+    }
+}
+
 pub fn run() {
     // Enable Chrome DevTools Protocol in debug builds only
     #[cfg(debug_assertions)]
@@ -83,6 +107,9 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AllowedAddonsPath(Mutex::new(None)))
         .manage(auth::AuthState(Mutex::new(None)))
+        .manage(PendingDeepLink(Mutex::new(
+            PendingDeepLinkPayload::default(),
+        )))
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Focus the existing window when a duplicate instance is launched
             if let Some(window) = app.get_webview_window("main") {
@@ -107,6 +134,12 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            if let Some(action) = std::env::args().find_map(|arg| parse_deep_link(&arg)) {
+                if let Ok(mut pending) = app.state::<PendingDeepLink>().0.lock() {
+                    *pending = pending_deep_link_payload(&action);
+                }
+            }
 
             // Register the deep link scheme at runtime (for dev / non-installer builds)
             #[cfg(desktop)]
@@ -216,6 +249,7 @@ pub fn run() {
             commands::auth_login,
             commands::auth_logout,
             commands::auth_get_user,
+            commands::consume_initial_deep_link,
             commands::create_pack,
             commands::update_pack,
             commands::vote_pack,

@@ -4,6 +4,7 @@ use crate::installer;
 use crate::manifest::{self, AddonManifest};
 use crate::metadata;
 use crate::AllowedAddonsPath;
+use crate::{PendingDeepLink, PendingDeepLinkPayload};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -60,6 +61,14 @@ pub fn set_addons_path(
         canonical,
     });
     Ok(())
+}
+
+#[tauri::command]
+pub fn consume_initial_deep_link(
+    state: tauri::State<'_, PendingDeepLink>,
+) -> Result<PendingDeepLinkPayload, String> {
+    let mut guard = state.0.lock().map_err(|_| "Internal error.".to_string())?;
+    Ok(std::mem::take(&mut *guard))
 }
 
 /// Validate a user-supplied name (backup name, etc.) to prevent path traversal

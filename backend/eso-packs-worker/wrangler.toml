@@ -1,14 +1,15 @@
 name = "eso-packs-worker"
 main = "src/index.ts"
-compatibility_date = "2024-12-01"
+compatibility_date = "2025-09-15"
+account_id = "75620f084ea25ade5ee57a71a830bba2"
 
 [[kv_namespaces]]
 binding = "ESO_PACKS"
-id = "PLACEHOLDER_PRODUCTION_ID"
-preview_id = "PLACEHOLDER_PREVIEW_ID"
+id = "ad8677b4cef048d68de9f8f4d0ef74a9"
 
-# Set via `wrangler secret put ADMIN_API_KEY` for production.
-# For local dev, use .dev.vars file:
+# Secrets are set via `wrangler secret put ADMIN_API_KEY`.
+# For local dev, create a .dev.vars file (git-ignored):
 #   ADMIN_API_KEY=dev-secret-key
-[vars]
-ADMIN_API_KEY = "dev-secret-key"
+
+[observability]
+enabled = true
