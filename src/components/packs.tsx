@@ -357,6 +357,7 @@ export function Packs({
     let completed = 0;
     let failed = 0;
     const failedNames: string[] = [];
+    let totalDepsInstalled = 0;
 
     for (const addon of newAddonsToInstall) {
       const info = await invokeResult<EsouiAddonInfo>("resolve_esoui_addon", {
@@ -379,6 +380,7 @@ export function Packs({
 
       if (install.ok) {
         completed++;
+        totalDepsInstalled += install.data.installedDeps.length;
       } else {
         failed++;
         failedNames.push(addon.name);
@@ -390,13 +392,18 @@ export function Packs({
     setInstalling(false);
     setInstallProgress(null);
 
+    const depNote =
+      totalDepsInstalled > 0
+        ? ` (+${totalDepsInstalled} dependenc${totalDepsInstalled !== 1 ? "ies" : "y"})`
+        : "";
+
     if (failed > 0) {
       toast.warning(
-        `Installed ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed: ${failedNames.join(", ")}`
+        `Installed ${completed} addon${completed !== 1 ? "s" : ""}${depNote}, ${failed} failed: ${failedNames.join(", ")}`
       );
     } else {
       toast.success(
-        `Installed ${completed} addon${completed !== 1 ? "s" : ""} from "${decodeHtml(selectedPack.title)}"`
+        `Installed ${completed} addon${completed !== 1 ? "s" : ""}${depNote} from "${decodeHtml(selectedPack.title)}"`
       );
     }
     onRefresh();
@@ -1354,11 +1361,11 @@ function PackCreateView({
     }
   };
 
-  // Filtered installed addons (only those with ESOUI IDs)
+  // Filtered installed addons (only non-library addons with ESOUI IDs)
   const filteredInstalled = useMemo(
     () =>
       installedAddons
-        .filter((a) => a.esouiId && a.esouiId > 0)
+        .filter((a) => a.esouiId && a.esouiId > 0 && !a.isLibrary)
         .filter(
           (a) =>
             !installedFilter ||
