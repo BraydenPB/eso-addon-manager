@@ -1814,8 +1814,10 @@ function PackCreateView({
                   <Loader2Icon className="size-4 animate-spin mr-1.5" />
                   {editingPackId ? "Saving..." : "Publishing..."}
                 </>
+              ) : editingPackId ? (
+                "Save Changes"
               ) : (
-                editingPackId ? "Save Changes" : "Publish Pack"
+                "Publish Pack"
               )}
             </Button>
           </div>

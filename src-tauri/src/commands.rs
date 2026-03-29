@@ -1765,6 +1765,7 @@ fn default_true() -> bool {
 #[serde(rename_all = "snake_case")]
 pub struct HubPack {
     pub id: String,
+    #[serde(default)]
     pub author_id: String,
     pub author_name: String,
     pub is_anonymous: bool,
