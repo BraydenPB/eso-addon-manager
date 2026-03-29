@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { BackupInfo } from "../types";
 import {
@@ -11,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getTauriErrorMessage, invokeOrThrow } from "@/lib/tauri";
 
 interface BackupsProps {
   addonsPath: string;
@@ -33,10 +33,10 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
 
   const loadBackups = async () => {
     try {
-      const result = await invoke<BackupInfo[]>("list_backups", { addonsPath });
+      const result = await invokeOrThrow<BackupInfo[]>("list_backups", { addonsPath });
       setBackups(result);
     } catch (e) {
-      toast.error(`Failed to load backups: ${e}`);
+      toast.error(`Failed to load backups: ${getTauriErrorMessage(e)}`);
     }
   };
 
@@ -53,14 +53,14 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      const info = await invoke<BackupInfo>("create_backup", {
+      const info = await invokeOrThrow<BackupInfo>("create_backup", {
         addonsPath,
         backupName: newName.trim(),
       });
       toast.success(`Backup created: ${info.fileCount} files (${formatBytes(info.totalSize)})`);
       loadBackups();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     } finally {
       setCreating(false);
     }
@@ -69,13 +69,13 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
   const handleRestore = async (name: string) => {
     setRestoring(name);
     try {
-      const count = await invoke<number>("restore_backup", {
+      const count = await invokeOrThrow<number>("restore_backup", {
         addonsPath,
         backupName: name,
       });
       toast.success(`Restored ${count} files from "${name}"`);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     } finally {
       setRestoring(null);
     }
@@ -83,11 +83,11 @@ export function Backups({ addonsPath, onClose }: BackupsProps) {
 
   const handleDelete = async (name: string) => {
     try {
-      await invoke("delete_backup", { addonsPath, backupName: name });
+      await invokeOrThrow("delete_backup", { addonsPath, backupName: name });
       toast.success(`Deleted backup "${name}"`);
       loadBackups();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     }
   };
 

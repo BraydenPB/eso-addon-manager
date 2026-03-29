@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { EsouiSearchResult, EsouiAddonDetail, InstallResult } from "../types";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/ui/section-header";
 import { InfoPill } from "@/components/ui/info-pill";
+import { getTauriErrorMessage, invokeOrThrow } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface DiscoverDetailProps {
@@ -22,21 +22,37 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
   const [screenshotIdx, setScreenshotIdx] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!result) {
       setDetail(null);
       setError(null);
       setInstallSuccess(null);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
+
     setLoading(true);
     setDetail(null);
     setError(null);
     setInstallSuccess(null);
     setScreenshotIdx(0);
-    invoke<EsouiAddonDetail>("fetch_esoui_detail", { esouiId: result.id })
-      .then(setDetail)
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+
+    void invokeOrThrow<EsouiAddonDetail>("fetch_esoui_detail", { esouiId: result.id })
+      .then((detailResult) => {
+        if (!cancelled) setDetail(detailResult);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(getTauriErrorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [result]);
 
   if (!result) {
@@ -79,7 +95,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
       let title = detail?.title ?? result.title;
       let version = detail?.version ?? "";
       if (!url) {
-        const info = await invoke<{
+        const info = await invokeOrThrow<{
           id: number;
           title: string;
           version: string;
@@ -89,7 +105,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
         title = info.title;
         version = info.version;
       }
-      const res = await invoke<InstallResult>("install_addon", {
+      const res = await invokeOrThrow<InstallResult>("install_addon", {
         addonsPath,
         downloadUrl: url,
         esouiId: result.id,
@@ -100,7 +116,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
       toast.success(`Installed ${res.installedFolders.join(", ")}`);
       onInstalled();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     } finally {
       setInstallingId(null);
     }

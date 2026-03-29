@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type {
   Pack,
@@ -35,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
 import { cn, decodeHtml } from "@/lib/utils";
 import {
   PackageIcon,
@@ -192,7 +192,7 @@ export function Packs({
       }
       setError(null);
       try {
-        const result = await invoke<PackPage>("list_packs", {
+        const result = await invokeOrThrow<PackPage>("list_packs", {
           packType: typeFilter === "all" ? null : typeFilter,
           tag: null,
           query: q || null,
@@ -212,7 +212,7 @@ export function Packs({
         setHasMore(result.packs.length >= PAGE_SIZE);
       } catch (e) {
         if (seq !== loadPacksSeqRef.current) return;
-        const msg = String(e);
+        const msg = getTauriErrorMessage(e);
         if (msg.includes("connect") || msg.includes("internet")) {
           setError("Could not reach Pack Hub. Check your internet connection and try again.");
         } else if (msg.includes("parse") || msg.includes("JSON")) {
@@ -254,12 +254,12 @@ export function Packs({
     const seq = ++selectPackSeqRef.current;
     setLoadingDetail(true);
     try {
-      const pack = await invoke<Pack>("get_pack", { id });
+      const pack = await invokeOrThrow<Pack>("get_pack", { id });
       if (seq !== selectPackSeqRef.current) return;
       setSelectedPack(pack);
     } catch (e) {
       if (seq !== selectPackSeqRef.current) return;
-      toast.error(`Failed to load pack: ${e}`);
+      toast.error(`Failed to load pack: ${getTauriErrorMessage(e)}`);
     } finally {
       if (seq === selectPackSeqRef.current) {
         setLoadingDetail(false);
@@ -359,22 +359,31 @@ export function Packs({
     const failedNames: string[] = [];
 
     for (const addon of newAddonsToInstall) {
-      try {
-        const info = await invoke<EsouiAddonInfo>("resolve_esoui_addon", {
-          input: String(addon.esouiId),
-        });
-        await invoke<InstallResult>("install_addon", {
-          addonsPath,
-          downloadUrl: info.downloadUrl,
-          esouiId: addon.esouiId,
-          esouiTitle: info.title,
-          esouiVersion: info.version,
-        });
+      const info = await invokeResult<EsouiAddonInfo>("resolve_esoui_addon", {
+        input: String(addon.esouiId),
+      });
+      if (!info.ok) {
+        failed++;
+        failedNames.push(addon.name);
+        setInstallProgress({ completed, failed, total: newAddonsToInstall.length });
+        continue;
+      }
+
+      const install = await invokeResult<InstallResult>("install_addon", {
+        addonsPath,
+        downloadUrl: info.data.downloadUrl,
+        esouiId: addon.esouiId,
+        esouiTitle: info.data.title,
+        esouiVersion: info.data.version,
+      });
+
+      if (install.ok) {
         completed++;
-      } catch {
+      } else {
         failed++;
         failedNames.push(addon.name);
       }
+
       setInstallProgress({ completed, failed, total: newAddonsToInstall.length });
     }
 
@@ -419,7 +428,7 @@ export function Packs({
 
     setVotingPacks((prev) => new Set(prev).add(packId));
     try {
-      const result = await invoke<VoteResponse>("vote_pack", { packId });
+      const result = await invokeOrThrow<VoteResponse>("vote_pack", { packId });
       // Reconcile with server truth
       const reconcile = (pack: Pack): Pack => ({
         ...pack,
@@ -440,7 +449,7 @@ export function Packs({
       };
       setPacks((prev) => prev.map((p) => (p.id === packId ? revert(p) : p)));
       setSelectedPack((prev) => (prev?.id === packId ? revert(prev) : prev));
-      const msg = String(e);
+      const msg = getTauriErrorMessage(e);
       if (msg.includes("expired") || msg.includes("sign in") || msg.includes("Sign in")) {
         onAuthChange(null);
       }
@@ -1230,14 +1239,15 @@ function PackCreateView({
     createSearchTimerRef.current = setTimeout(async () => {
       const seq = ++createSearchSeqRef.current;
       try {
-        const results = await invoke<EsouiSearchResult[]>("search_esoui_addons", {
+        const results = await invokeOrThrow<EsouiSearchResult[]>("search_esoui_addons", {
           query: query.trim(),
         });
         if (seq !== createSearchSeqRef.current) return;
         setSearchResults(results);
-      } catch {
+      } catch (e) {
         if (seq !== createSearchSeqRef.current) return;
         setSearchResults([]);
+        toast.error(`Search failed: ${getTauriErrorMessage(e)}`);
       } finally {
         if (seq === createSearchSeqRef.current) {
           setSearching(false);
@@ -1278,11 +1288,11 @@ function PackCreateView({
   const handleLogin = async () => {
     setLoggingIn(true);
     try {
-      const user = await invoke<AuthUser>("auth_login");
+      const user = await invokeOrThrow<AuthUser>("auth_login");
       onAuthChange(user);
       toast.success(`Signed in as ${user.userName}`);
     } catch (e) {
-      toast.error(`Sign in failed: ${e}`);
+      toast.error(`Sign in failed: ${getTauriErrorMessage(e)}`);
     } finally {
       setLoggingIn(false);
     }
@@ -1290,11 +1300,11 @@ function PackCreateView({
 
   const handleLogout = async () => {
     try {
-      await invoke("auth_logout");
+      await invokeOrThrow("auth_logout");
       onAuthChange(null);
       toast.success("Signed out");
     } catch (e) {
-      toast.error(`Sign out failed: ${e}`);
+      toast.error(`Sign out failed: ${getTauriErrorMessage(e)}`);
     }
   };
 
@@ -1310,7 +1320,7 @@ function PackCreateView({
     setPublishing(true);
     try {
       const pack = editingPackId
-        ? await invoke<Pack>("update_pack", {
+        ? await invokeOrThrow<Pack>("update_pack", {
             payload: {
               id: editingPackId,
               title: title.trim(),
@@ -1321,7 +1331,7 @@ function PackCreateView({
               isAnonymous,
             },
           })
-        : await invoke<Pack>("create_pack", {
+        : await invokeOrThrow<Pack>("create_pack", {
             payload: {
               title: title.trim(),
               description: description.trim(),
@@ -1334,7 +1344,7 @@ function PackCreateView({
       toast.success(editingPackId ? "Pack updated!" : "Pack published!");
       onPublished(pack);
     } catch (e) {
-      const msg = String(e);
+      const msg = getTauriErrorMessage(e);
       if (msg.includes("expired") || msg.includes("sign in")) {
         onAuthChange(null);
       }

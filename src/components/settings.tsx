@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import { getSetting, setSetting } from "@/lib/store";
+import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
 import type { ImportResult } from "../types";
 import {
   Dialog,
@@ -48,10 +48,12 @@ export function Settings({
   const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
-    getSetting<boolean>("autoUpdate", false).then(setAutoUpdate);
-    invoke<boolean>("detect_minion")
-      .then(setMinionDetected)
-      .catch(() => {});
+    void getSetting<boolean>("autoUpdate", false).then(setAutoUpdate);
+    void invokeResult<boolean>("detect_minion").then((result) => {
+      if (result.ok) {
+        setMinionDetected(result.data);
+      }
+    });
   }, []);
 
   const handleSave = () => {
@@ -79,13 +81,13 @@ export function Settings({
   const handleExport = async () => {
     setExportStatus(null);
     try {
-      const json = await invoke<string>("export_addon_list", {
+      const json = await invokeOrThrow<string>("export_addon_list", {
         addonsPath,
       });
       await navigator.clipboard.writeText(json);
       setExportStatus("Addon list copied to clipboard!");
     } catch (e) {
-      setExportStatus(`Export failed: ${e}`);
+      setExportStatus(`Export failed: ${getTauriErrorMessage(e)}`);
     }
   };
 
@@ -99,14 +101,14 @@ export function Settings({
         return;
       }
       setImporting(true);
-      const result = await invoke<ImportResult>("import_addon_list", {
+      const result = await invokeOrThrow<ImportResult>("import_addon_list", {
         addonsPath,
         jsonData: text,
       });
       setImportResult(result);
       onRefresh();
     } catch (e) {
-      setImportError(String(e));
+      setImportError(getTauriErrorMessage(e));
     } finally {
       setImporting(false);
     }
@@ -193,7 +195,7 @@ export function Settings({
                   onClick={async () => {
                     setMigrating(true);
                     try {
-                      const result = await invoke<{
+                      const result = await invokeOrThrow<{
                         found: boolean;
                         addonCount: number;
                         imported: number;
@@ -209,7 +211,7 @@ export function Settings({
                         toast.info("All Minion addons are already tracked.");
                       }
                     } catch (e) {
-                      toast.error(String(e));
+                      toast.error(getTauriErrorMessage(e));
                     } finally {
                       setMigrating(false);
                     }

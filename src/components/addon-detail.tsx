@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 import type { AddonManifest, UpdateCheckResult, InstallResult } from "../types";
@@ -9,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { GlassPanel } from "@/components/ui/glass-panel";
 import { SectionHeader } from "@/components/ui/section-header";
 import { InfoPill } from "@/components/ui/info-pill";
+import { getTauriErrorMessage, invokeOrThrow } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface AddonDetailProps {
@@ -92,7 +92,7 @@ export function AddonDetail({
     setRemoving(true);
     setRemoveError(null);
     try {
-      await invoke("remove_addon", {
+      await invokeOrThrow("remove_addon", {
         addonsPath,
         folderName: addon.folderName,
       });
@@ -100,7 +100,7 @@ export function AddonDetail({
       toast.success(`Removed ${addon.title}`);
       onRemove();
     } catch (e) {
-      setRemoveError(String(e));
+      setRemoveError(getTauriErrorMessage(e));
       setRemoving(false);
     }
   };
@@ -110,14 +110,14 @@ export function AddonDetail({
     setUpdating(true);
     setUpdateError(null);
     try {
-      await invoke<InstallResult>("update_addon", {
+      await invokeOrThrow<InstallResult>("update_addon", {
         addonsPath,
         esouiId: updateResult.esouiId,
       });
       toast.success(`Updated ${addon.title}`);
       onAddonUpdated(updateResult.esouiId);
     } catch (e) {
-      setUpdateError(String(e));
+      setUpdateError(getTauriErrorMessage(e));
     } finally {
       setUpdating(false);
     }
@@ -126,14 +126,14 @@ export function AddonDetail({
   const handleInstallDep = async (depName: string) => {
     setInstallingDep(depName);
     try {
-      await invoke<InstallResult>("install_dependency", {
+      await invokeOrThrow<InstallResult>("install_dependency", {
         addonsPath,
         depName,
       });
       toast.success(`Installed ${depName}`);
       onRemove(); // refresh addon list
     } catch (e) {
-      toast.error(`Failed to install ${depName}: ${String(e)}`);
+      toast.error(`Failed to install ${depName}: ${getTauriErrorMessage(e)}`);
     } finally {
       setInstallingDep(null);
     }
@@ -142,14 +142,14 @@ export function AddonDetail({
   const handleRemoveDep = async (depName: string) => {
     setRemovingDep(depName);
     try {
-      await invoke("remove_addon", {
+      await invokeOrThrow("remove_addon", {
         addonsPath,
         folderName: depName,
       });
       toast.success(`Removed ${depName}`);
       onRemove(); // refresh addon list
     } catch (e) {
-      toast.error(`Failed to remove ${depName}: ${String(e)}`);
+      toast.error(`Failed to remove ${depName}: ${getTauriErrorMessage(e)}`);
     } finally {
       setRemovingDep(null);
     }

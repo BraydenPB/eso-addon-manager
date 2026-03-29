@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { CharacterInfo } from "../types";
 import {
@@ -12,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InfoPill } from "@/components/ui/info-pill";
+import { getTauriErrorMessage, invokeOrThrow } from "@/lib/tauri";
 
 interface CharactersProps {
   addonsPath: string;
@@ -27,12 +27,12 @@ export function Characters({ addonsPath, onClose }: CharactersProps) {
   useEffect(() => {
     async function load() {
       try {
-        const chars = await invoke<CharacterInfo[]>("list_characters", {
+        const chars = await invokeOrThrow<CharacterInfo[]>("list_characters", {
           addonsPath,
         });
         setCharacters(chars);
       } catch (e) {
-        toast.error(`Failed to load characters: ${e}`);
+        toast.error(`Failed to load characters: ${getTauriErrorMessage(e)}`);
       } finally {
         setLoading(false);
       }
@@ -44,14 +44,14 @@ export function Characters({ addonsPath, onClose }: CharactersProps) {
     const name = backupName.trim() || `${char.name}-backup`;
     setBackingUp(char.name);
     try {
-      const count = await invoke<number>("backup_character_settings", {
+      const count = await invokeOrThrow<number>("backup_character_settings", {
         addonsPath,
         characterName: char.name,
         backupName: name,
       });
       toast.success(`Backed up ${count} SavedVariables files for ${char.name}`);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     } finally {
       setBackingUp(null);
     }

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { ApiCompatInfo } from "../types";
 import {
   Dialog,
@@ -12,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { InfoPill } from "@/components/ui/info-pill";
 import { SectionHeader } from "@/components/ui/section-header";
+import { getTauriErrorMessage, invokeOrThrow } from "@/lib/tauri";
 
 interface ApiCompatProps {
   addonsPath: string;
@@ -26,12 +26,12 @@ export function ApiCompat({ addonsPath, onClose }: ApiCompatProps) {
   useEffect(() => {
     async function load() {
       try {
-        const result = await invoke<ApiCompatInfo>("check_api_compatibility", {
+        const result = await invokeOrThrow<ApiCompatInfo>("check_api_compatibility", {
           addonsPath,
         });
         setInfo(result);
       } catch (e) {
-        setError(String(e));
+        setError(getTauriErrorMessage(e));
       } finally {
         setLoading(false);
       }

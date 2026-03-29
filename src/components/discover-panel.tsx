@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type {
   DiscoverTab,
@@ -18,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface DiscoverPanelProps {
@@ -36,10 +36,10 @@ function useAddonInstall(addonsPath: string, onInstalled: () => void) {
     async (id: number) => {
       setInstallingId(id);
       try {
-        const info = await invoke<EsouiAddonInfo>("resolve_esoui_addon", {
+        const info = await invokeOrThrow<EsouiAddonInfo>("resolve_esoui_addon", {
           input: String(id),
         });
-        const res = await invoke<InstallResult>("install_addon", {
+        const res = await invokeOrThrow<InstallResult>("install_addon", {
           addonsPath,
           downloadUrl: info.downloadUrl,
           esouiId: id,
@@ -49,7 +49,7 @@ function useAddonInstall(addonsPath: string, onInstalled: () => void) {
         toast.success(`Installed ${res.installedFolders.join(", ")}`);
         onInstalled();
       } catch (e) {
-        toast.error(String(e));
+        toast.error(getTauriErrorMessage(e));
       } finally {
         setInstallingId(null);
       }
@@ -198,12 +198,12 @@ function SearchContent({
     setSearching(true);
     const id = ++searchIdRef.current;
     try {
-      const r = await invoke<EsouiSearchResult[]>("search_esoui_addons", {
+      const r = await invokeOrThrow<EsouiSearchResult[]>("search_esoui_addons", {
         query: searchQuery.trim(),
       });
       if (searchIdRef.current === id) setResults(r);
     } catch (e) {
-      if (searchIdRef.current === id) toast.error(String(e));
+      if (searchIdRef.current === id) toast.error(getTauriErrorMessage(e));
     } finally {
       if (searchIdRef.current === id) setSearching(false);
     }
@@ -286,22 +286,26 @@ function CategoryContent({
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
 
   useEffect(() => {
-    invoke<EsouiCategory[]>("get_esoui_categories")
-      .then(setCategories)
-      .catch(() => {});
+    void invokeResult<EsouiCategory[]>("get_esoui_categories").then((result) => {
+      if (result.ok) {
+        setCategories(result.data);
+      } else {
+        toast.error(`Failed to load categories: ${result.error}`);
+      }
+    });
   }, []);
 
   const loadCategory = async (catId: number, p: number, sort: string) => {
     setLoading(true);
     try {
-      const r = await invoke<EsouiSearchResult[]>("browse_esoui_category", {
+      const r = await invokeOrThrow<EsouiSearchResult[]>("browse_esoui_category", {
         categoryId: catId,
         page: p,
         sortBy: sort,
       });
       setResults(r);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -430,13 +434,13 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
     setState("resolving");
     setError(null);
     try {
-      const info = await invoke<EsouiAddonInfo>("resolve_esoui_addon", {
+      const info = await invokeOrThrow<EsouiAddonInfo>("resolve_esoui_addon", {
         input: input.trim(),
       });
       setAddonInfo(info);
       setState("resolved");
     } catch (e) {
-      setError(String(e));
+      setError(getTauriErrorMessage(e));
       setState("error");
     }
   };
@@ -446,7 +450,7 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
     setState("installing");
     setError(null);
     try {
-      const installResult = await invoke<InstallResult>("install_addon", {
+      const installResult = await invokeOrThrow<InstallResult>("install_addon", {
         addonsPath,
         downloadUrl: addonInfo.downloadUrl,
         esouiId: addonInfo.id,
@@ -458,7 +462,7 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
       toast.success(`Installed ${installResult.installedFolders.join(", ")}`);
       onInstalled();
     } catch (e) {
-      setError(String(e));
+      setError(getTauriErrorMessage(e));
       setState("error");
     }
   };

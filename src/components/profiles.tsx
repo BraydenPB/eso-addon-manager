@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { AddonProfile } from "../types";
 import {
@@ -12,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InfoPill } from "@/components/ui/info-pill";
+import { getTauriErrorMessage, invokeOrThrow } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface ProfilesProps {
@@ -30,13 +30,16 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
 
   const loadProfiles = async () => {
     try {
-      const [profs, active] = await invoke<[AddonProfile[], string | null]>("list_profiles", {
-        addonsPath,
-      });
+      const [profs, active] = await invokeOrThrow<[AddonProfile[], string | null]>(
+        "list_profiles",
+        {
+          addonsPath,
+        }
+      );
       setProfiles(profs);
       setActiveProfile(active);
     } catch (e) {
-      toast.error(`Failed to load profiles: ${e}`);
+      toast.error(`Failed to load profiles: ${getTauriErrorMessage(e)}`);
     }
   };
 
@@ -49,7 +52,7 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await invoke<AddonProfile>("create_profile", {
+      await invokeOrThrow<AddonProfile>("create_profile", {
         addonsPath,
         profileName: newName.trim(),
       });
@@ -57,7 +60,7 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
       setNewName("");
       loadProfiles();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     } finally {
       setCreating(false);
     }
@@ -66,7 +69,7 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
   const handleActivate = async (name: string) => {
     setActivating(name);
     try {
-      const result = await invoke<{
+      const result = await invokeOrThrow<{
         enabled: string[];
         disabled: string[];
         failed: string[];
@@ -85,7 +88,7 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
       setActiveProfile(name);
       onRefresh();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     } finally {
       setActivating(null);
     }
@@ -93,11 +96,11 @@ export function Profiles({ addonsPath, onClose, onRefresh }: ProfilesProps) {
 
   const handleDelete = async (name: string) => {
     try {
-      await invoke("delete_profile", { addonsPath, profileName: name });
+      await invokeOrThrow("delete_profile", { addonsPath, profileName: name });
       toast.success(`Profile "${name}" deleted`);
       loadProfiles();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(getTauriErrorMessage(e));
     }
   };
 
