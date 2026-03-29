@@ -126,27 +126,49 @@ function App() {
         setUpdateProgress({ completed: 0, failed: 0, total: updates.length });
         let completed = 0;
         let failed = 0;
-        const concurrency = 3;
-        for (let i = 0; i < updates.length; i += concurrency) {
-          const batch = updates.slice(i, i + concurrency);
-          const results = await Promise.allSettled(
-            batch.map((u) =>
-              invoke<InstallResult>("update_addon", {
-                addonsPath: path,
-                esouiId: u.esouiId,
-              })
-            )
-          );
-          for (const r of results) {
-            if (r.status === "fulfilled") completed++;
-            else failed++;
+        // Sequential updates to avoid metadata race condition
+        // (concurrent load/save overwrites previous updates)
+        for (const u of updates) {
+          try {
+            await invoke<InstallResult>("update_addon", {
+              addonsPath: path,
+              esouiId: u.esouiId,
+              apiVersion: u.remoteVersion,
+            });
+            completed++;
+          } catch {
+            failed++;
           }
           setUpdateProgress({ completed, failed, total: updates.length });
         }
         setUpdatingAll(false);
         setUpdateProgress(null);
-        if (completed > 0) {
+        if (failed > 0) {
+          toast.warning(
+            `Auto-updated ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`
+          );
+        } else if (completed > 0) {
           toast.success(`Auto-updated ${completed} addon${completed !== 1 ? "s" : ""}`);
+        }
+        // Clear update results for successfully updated addons and re-scan
+        setUpdateResults((prev) => {
+          const updatedIds = new Set(updates.map((u) => u.esouiId));
+          return prev.filter((r) => !updatedIds.has(r.esouiId));
+        });
+        // Re-scan to pick up new versions (inline to avoid circular dep)
+        try {
+          const refreshed = await invoke<AddonManifest[]>("scan_installed_addons", {
+            addonsPath: path,
+          });
+          setAddons(refreshed);
+          if (selectedAddonRef.current) {
+            const updated = refreshed.find(
+              (a) => a.folderName === selectedAddonRef.current!.folderName
+            );
+            setSelectedAddon(updated ?? null);
+          }
+        } catch {
+          // Non-critical
         }
       } else if (updates.length > 0) {
         toast.info(`${updates.length} update${updates.length > 1 ? "s" : ""} available`);
@@ -200,14 +222,15 @@ function App() {
           toast.success(
             `Auto-linked ${result.linked.length} addon${result.linked.length > 1 ? "s" : ""} to ESOUI`
           );
-          // Re-scan to pick up new ESOUI IDs
-          scanAndCheck(path);
+          // Re-scan to pick up new ESOUI IDs (but don't re-check for updates
+          // since checkForUpdates already ran — avoids duplicate toasts)
+          scanAddons(path);
         }
       } catch {
         // Non-critical
       }
     },
-    [scanAndCheck]
+    [scanAddons]
   );
 
   useEffect(() => {
@@ -236,8 +259,9 @@ function App() {
         await setSetting("addonsPath", path);
         await scanAddons(path);
         const autoUpdate = await getSetting<boolean>("autoUpdate", false);
-        checkForUpdates(path, autoUpdate);
-        // Auto-link after initial scan
+        await checkForUpdates(path, autoUpdate);
+        // Auto-link after initial scan (must wait for auto-updates to finish
+        // first, otherwise its check_for_updates call can overwrite metadata)
         runAutoLink(path);
       } catch {
         setError("Could not detect ESO AddOns folder. Please set it in Settings.");
@@ -337,27 +361,25 @@ function App() {
   const updatesAvailable = useMemo(() => updateResults.filter((r) => r.hasUpdate), [updateResults]);
 
   const runBatchUpdates = async (updates: UpdateCheckResult[]) => {
+    const path = addonsPathRef.current;
     setUpdatingAll(true);
     setUpdateProgress({ completed: 0, failed: 0, total: updates.length });
 
     let completed = 0;
     let failed = 0;
-    const concurrency = 3;
 
-    // Process updates in batches of `concurrency`
-    for (let i = 0; i < updates.length; i += concurrency) {
-      const batch = updates.slice(i, i + concurrency);
-      const results = await Promise.allSettled(
-        batch.map((update) =>
-          invoke<InstallResult>("update_addon", {
-            addonsPath,
-            esouiId: update.esouiId,
-          })
-        )
-      );
-      for (const r of results) {
-        if (r.status === "fulfilled") completed++;
-        else failed++;
+    // Sequential updates to avoid metadata race condition
+    // (concurrent load/save overwrites previous updates)
+    for (const update of updates) {
+      try {
+        await invoke<InstallResult>("update_addon", {
+          addonsPath: path,
+          esouiId: update.esouiId,
+          apiVersion: update.remoteVersion,
+        });
+        completed++;
+      } catch {
+        failed++;
       }
       setUpdateProgress({ completed, failed, total: updates.length });
     }
@@ -366,11 +388,11 @@ function App() {
     setUpdateProgress(null);
 
     if (failed > 0) {
-      toast.success(`Updated ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`);
+      toast.warning(`Updated ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`);
     } else {
       toast.success(`Updated ${completed} addon${completed !== 1 ? "s" : ""}`);
     }
-    scanAddons(addonsPath);
+    if (path) scanAddons(path);
     setUpdateResults((prev) => {
       const updatedIds = new Set(updates.map((u) => u.esouiId));
       return prev.filter((r) => !updatedIds.has(r.esouiId));

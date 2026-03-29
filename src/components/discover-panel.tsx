@@ -399,7 +399,7 @@ function CategoryContent({
           <Button
             variant="ghost"
             size="xs"
-            disabled={loading}
+            disabled={loading || results.length === 0}
             onClick={() => {
               const p = page + 1;
               setPage(p);

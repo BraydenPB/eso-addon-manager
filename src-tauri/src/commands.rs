@@ -660,14 +660,21 @@ pub async fn update_addon(
     state: tauri::State<'_, AllowedAddonsPath>,
     addons_path: String,
     esoui_id: u32,
+    api_version: Option<String>,
 ) -> Result<InstallResult, String> {
     let addons_dir = require_allowed_path(&state, &addons_path)?;
-    tokio::task::spawn_blocking(move || update_addon_blocking(&addons_dir, esoui_id))
-        .await
-        .map_err(|e| format!("Task failed: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        update_addon_blocking(&addons_dir, esoui_id, api_version.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
-fn update_addon_blocking(addons_dir: &Path, esoui_id: u32) -> Result<InstallResult, String> {
+fn update_addon_blocking(
+    addons_dir: &Path,
+    esoui_id: u32,
+    api_version: Option<&str>,
+) -> Result<InstallResult, String> {
     // Fetch latest info from ESOUI
     let info = esoui::fetch_addon_info(esoui_id)?;
 
@@ -675,10 +682,13 @@ fn update_addon_blocking(addons_dir: &Path, esoui_id: u32) -> Result<InstallResu
     let tmp_file = esoui::download_addon(&info.download_url)?;
     let installed_folders = installer::extract_addon_zip(tmp_file.path(), addons_dir)?;
 
-    // Update metadata — store the ESOUI version so check_for_updates
-    // compares like-for-like (both from ESOUI), avoiding mismatches
-    // between local manifest versions and ESOUI-reported versions.
-    // Also clean up any old metadata entries for the same esoui_id
+    // Store the API version (from filelist.json) when available, since
+    // check_for_updates compares against the API version. Using the
+    // HTML-scraped version here caused perpetual "update available" when
+    // the two sources returned slightly different version strings.
+    let version = api_version.unwrap_or(&info.version);
+
+    // Clean up any old metadata entries for the same esoui_id
     // that aren't in the newly extracted folders (handles addon renames).
     let mut store = metadata::load_metadata(addons_dir);
     let old_folders: Vec<String> = store
@@ -697,7 +707,7 @@ fn update_addon_blocking(addons_dir: &Path, esoui_id: u32) -> Result<InstallResu
         addons_dir,
         &installed_folders,
         esoui_id,
-        &info.version,
+        version,
         &info.title,
         &info.download_url,
         0, // preserved from existing metadata
@@ -816,6 +826,23 @@ fn auto_link_addons_blocking(addons_path: &str) -> Result<AutoLinkResult, String
         // Look up this folder name in the API data
         if let Some(api_entry) = api_lookup.get(&folder_name) {
             let already_tracked = store.addons.get(&folder_name);
+
+            // Skip bundled secondary folders: if esouiId is 0 and another
+            // addon in the store installed this folder (shares download_url),
+            // don't auto-link it to its own ESOUI entry — that would cause
+            // version mismatches since the bundled version differs from the
+            // standalone version.
+            let is_bundled_secondary = already_tracked.is_some_and(|m| {
+                m.esoui_id == 0
+                    && store
+                        .addons
+                        .values()
+                        .any(|other| other.esoui_id != 0 && other.download_url == m.download_url)
+            });
+            if is_bundled_secondary {
+                continue;
+            }
+
             let needs_update = match already_tracked {
                 Some(meta) => {
                     // Update existing entries: fill in missing esoui_id or last_update
@@ -1905,7 +1932,10 @@ pub async fn auth_login(
     save_auth_tokens(&app, &tokens);
 
     // Update in-memory state
-    *state.0.lock().unwrap() = Some(tokens);
+    *state
+        .0
+        .lock()
+        .map_err(|e| format!("Auth lock poisoned: {}", e))? = Some(tokens);
 
     Ok(user)
 }
@@ -1916,7 +1946,10 @@ pub async fn auth_logout(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     // Clear in-memory state
-    *state.0.lock().unwrap() = None;
+    *state
+        .0
+        .lock()
+        .map_err(|e| format!("Auth lock poisoned: {}", e))? = None;
 
     // Clear from store
     clear_auth_tokens(&app);
@@ -1930,7 +1963,10 @@ pub async fn auth_get_user(
     app: tauri::AppHandle,
 ) -> Result<Option<AuthUser>, String> {
     let tokens = {
-        let guard = state.0.lock().unwrap();
+        let guard = state
+            .0
+            .lock()
+            .map_err(|e| format!("Auth lock poisoned: {}", e))?;
         guard.clone()
     };
 
@@ -1955,7 +1991,10 @@ pub async fn auth_get_user(
 
             save_auth_tokens(&app, &new_tokens);
 
-            *state.0.lock().unwrap() = Some(new_tokens);
+            *state
+                .0
+                .lock()
+                .map_err(|e| format!("Auth lock poisoned: {}", e))? = Some(new_tokens);
             Ok(Some(user))
         }
         Ok(None) => {
@@ -1967,7 +2006,10 @@ pub async fn auth_get_user(
         }
         Err(_) => {
             // Refresh failed — clear session
-            *state.0.lock().unwrap() = None;
+            *state
+                .0
+                .lock()
+                .map_err(|e| format!("Auth lock poisoned: {}", e))? = None;
             clear_auth_tokens(&app);
             Ok(None)
         }
@@ -1994,7 +2036,10 @@ pub async fn create_pack(
     // Get current access token (refresh if needed)
     let access_token = {
         let tokens = {
-            let guard = state.0.lock().unwrap();
+            let guard = state
+                .0
+                .lock()
+                .map_err(|e| format!("Auth lock poisoned: {}", e))?;
             guard.clone()
         };
 
@@ -2012,12 +2057,18 @@ pub async fn create_pack(
             Ok(Some(new_tokens)) => {
                 let token = new_tokens.access_token.clone();
                 save_auth_tokens(&app, &new_tokens);
-                *state.0.lock().unwrap() = Some(new_tokens);
+                *state
+                    .0
+                    .lock()
+                    .map_err(|e| format!("Auth lock poisoned: {}", e))? = Some(new_tokens);
                 token
             }
             Ok(None) => tokens.access_token.clone(),
             Err(e) => {
-                *state.0.lock().unwrap() = None;
+                *state
+                    .0
+                    .lock()
+                    .map_err(|e| format!("Auth lock poisoned: {}", e))? = None;
                 return Err(e);
             }
         }

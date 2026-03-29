@@ -133,7 +133,9 @@ pub fn run() {
                     if let Some(val) = store.get("auth_tokens") {
                         if let Ok(tokens) = serde_json::from_value::<auth::AuthTokens>(val.clone())
                         {
-                            *app.state::<auth::AuthState>().0.lock().unwrap() = Some(tokens);
+                            if let Ok(mut guard) = app.state::<auth::AuthState>().0.lock() {
+                                *guard = Some(tokens);
+                            }
                         }
                     }
                 }

@@ -6,6 +6,7 @@ import type {
   PackPage,
   PackAddonEntry,
   InstallResult,
+  EsouiAddonInfo,
   EsouiSearchResult,
   AddonManifest,
   AuthUser,
@@ -240,9 +241,15 @@ export function Packs({
 
     for (const addon of toInstall) {
       try {
+        const info = await invoke<EsouiAddonInfo>("resolve_esoui_addon", {
+          input: String(addon.esouiId),
+        });
         await invoke<InstallResult>("install_addon", {
           addonsPath,
+          downloadUrl: info.downloadUrl,
           esouiId: addon.esouiId,
+          esouiTitle: info.title,
+          esouiVersion: info.version,
         });
         completed++;
       } catch {
@@ -255,7 +262,7 @@ export function Packs({
     setInstallProgress(null);
 
     if (failed > 0) {
-      toast.success(`Installed ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`);
+      toast.warning(`Installed ${completed} addon${completed !== 1 ? "s" : ""}, ${failed} failed`);
     } else {
       toast.success(
         `Installed ${completed} addon${completed !== 1 ? "s" : ""} from "${selectedPack.title}"`

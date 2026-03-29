@@ -145,7 +145,7 @@ export interface Pack {
   id: string;
   title: string;
   description: string;
-  packType: string;
+  packType: PackType;
   authorName: string;
   isAnonymous: boolean;
   voteCount: number;

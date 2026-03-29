@@ -204,9 +204,7 @@ export function AddonList({
                   className={cn(
                     "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150",
                     filterMode === mode
-                      ? mode === "favorites"
-                        ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
-                        : "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
+                      ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
                       : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
                   )}
                   onClick={() => {

@@ -127,7 +127,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
 
   if (!detail) return null;
 
-  const safeIdx = Math.min(screenshotIdx, detail.screenshots.length - 1);
+  const safeIdx = Math.max(0, Math.min(screenshotIdx, detail.screenshots.length - 1));
 
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-5">

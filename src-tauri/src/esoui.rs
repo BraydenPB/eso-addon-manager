@@ -6,52 +6,64 @@ use std::io;
 use std::sync::OnceLock;
 use tempfile::NamedTempFile;
 
-/// Extract version text from a `#version` div, stripping the "Version:" prefix.
-fn extract_version(document: &Html) -> String {
-    let version_sel = Selector::parse("#version").unwrap();
-    document
-        .select(&version_sel)
-        .next()
-        .map(|el| {
-            let text = el.text().collect::<String>();
-            text.trim()
-                .strip_prefix("Version:")
-                .or_else(|| text.trim().strip_prefix("Version"))
-                .unwrap_or(text.trim())
-                .trim()
-                .to_string()
-        })
-        .unwrap_or_default()
+// ── ESOUI filedetails JSON API ──────────────────────────────────────────────
+
+/// Response from `api.mmoui.com/v4/game/ESO/filedetails/{id}.json`.
+/// The API wraps the result in a single-element array.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiFileDetail {
+    id: u32,
+    title: String,
+    version: String,
+    author: String,
+    description: String,
+    last_update: u64,
+    download_uri: String,
+    downloads: u64,
+    downloads_monthly: u64,
+    favorites: u64,
+    #[serde(default)]
+    images: Vec<ApiImage>,
 }
 
-/// Fetch the CDN download URL from an ESOUI landing page.
-fn fetch_download_url(client: &reqwest::blocking::Client, id: u32) -> Result<String, String> {
-    let landing_url = format!("https://www.esoui.com/downloads/landing.php?fileid={}", id);
-    let landing_body = fetch_page(client, &landing_url, None)?;
-    let landing_doc = Html::parse_document(&landing_body);
-
-    let a_sel = Selector::parse("a[href]").unwrap();
-    landing_doc
-        .select(&a_sel)
-        .filter_map(|el| el.value().attr("href"))
-        .find(|href| href.contains("cdn.esoui.com") && href.contains(".zip"))
-        .map(|s| s.to_string())
-        .ok_or_else(|| {
-            format!(
-                "Could not find a CDN download link for addon {}. \
-                 The addon may have been removed, or ESOUI may have changed their page layout.",
-                id
-            )
-        })
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiImage {
+    image_url: String,
 }
 
-/// Decode common HTML entities for cleaner display text.
-fn decode_html_entities(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
+/// Fetch addon details from the ESOUI filedetails JSON API.
+fn fetch_file_detail(client: &reqwest::blocking::Client, id: u32) -> Result<ApiFileDetail, String> {
+    let url = format!("https://api.mmoui.com/v4/game/ESO/filedetails/{}.json", id);
+    let response = client.get(&url).send().map_err(|e| {
+        if e.is_connect() || e.is_timeout() {
+            "Could not reach ESOUI API. Check your internet connection.".to_string()
+        } else {
+            format!("ESOUI API request failed: {}", e)
+        }
+    })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            404 => "Addon not found on ESOUI. It may have been removed.".to_string(),
+            429 => "Too many requests to ESOUI. Please wait a moment and try again.".to_string(),
+            500..=599 => "ESOUI is currently unavailable. Try again later.".to_string(),
+            _ => format!("ESOUI API returned an error (HTTP {})", status),
+        });
+    }
+
+    let entries: Vec<ApiFileDetail> = response
+        .json()
+        .map_err(|e| format!("Failed to parse ESOUI API response: {}", e))?;
+
+    entries.into_iter().next().ok_or_else(|| {
+        format!(
+            "ESOUI API returned empty response for addon {}. It may have been removed.",
+            id
+        )
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -141,60 +153,18 @@ fn fetch_page(
         .map_err(|e| format!("Failed to read response: {}", e))
 }
 
-/// Fetch basic addon info (title, version, download URL) from ESOUI.
-///
-/// Scraper assumptions (check if ESOUI changes their HTML):
-/// - Title: `<meta property="og:title" content="...">` on the info page
-/// - Version: `<div id="version">Version: X.Y.Z</div>` on the info page
-/// - Download URL: landing.php page has an `<a href="https://cdn.esoui.com/.../.zip...">` link
+/// Fetch basic addon info (title, version, download URL) from ESOUI JSON API.
 pub fn fetch_addon_info(id: u32) -> Result<EsouiAddonInfo, String> {
     let client = http_client();
-
-    // Step 1: Fetch the addon info page to get the title
-    let info_url = format!("https://www.esoui.com/downloads/info{}", id);
-    let body = fetch_page(client, &info_url, None)?;
-    let document = Html::parse_document(&body);
-
-    // Extract title from <meta property="og:title" content="...">
-    let meta_sel = Selector::parse(r#"meta[property="og:title"]"#).unwrap();
-    let title = document
-        .select(&meta_sel)
-        .next()
-        .and_then(|el| el.value().attr("content"))
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("Addon #{}", id));
-
-    let version = extract_version(&document);
-
-    // Extract "Updated" date from the info page table (same page, no extra request)
-    let updated = extract_table_field(&document, "Updated");
-
-    let download_url = fetch_download_url(client, id)?;
+    let detail = fetch_file_detail(client, id)?;
 
     Ok(EsouiAddonInfo {
-        id,
-        title,
-        version,
-        download_url,
-        updated,
+        id: detail.id,
+        title: detail.title,
+        version: detail.version,
+        download_url: detail.download_uri,
+        updated: String::new(), // Not needed by callers — metadata uses last_update epoch
     })
-}
-
-/// Extract a single field value from the ESOUI info page metadata table.
-fn extract_table_field(document: &Html, field_name: &str) -> String {
-    let tr_sel = Selector::parse("tr").unwrap();
-    let td_sel = Selector::parse("td").unwrap();
-    for tr in document.select(&tr_sel) {
-        let tds: Vec<_> = tr.select(&td_sel).collect();
-        if tds.len() >= 2 {
-            let label = tds[0].text().collect::<String>();
-            let label = label.trim().trim_end_matches(':');
-            if label == field_name {
-                return tds[1].text().collect::<String>().trim().to_string();
-            }
-        }
-    }
-    String::new()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -216,155 +186,120 @@ pub struct EsouiAddonDetail {
     pub download_url: String,
 }
 
-/// Fetch full addon page details from ESOUI.
-///
-/// Scraper assumptions (check if ESOUI changes their HTML):
-/// - Title: `<meta property="og:title" content="...">`
-/// - Version: `<div id="version">Version: X.Y.Z</div>`
-/// - Author: `<div id="author">by: AuthorName</div>`
-/// - Description: `<div class="postmessage">...</div>`
-/// - File size: `<div id="size">...</div>`
-/// - Table metadata (Compatibility, Total downloads, etc.): `<tr><td>Label:</td><td>Value</td></tr>`
-/// - Screenshots: `<a class="lightbox" rel="filepics" href="...preview...">`
-/// - Download URL: landing.php page `<a href="https://cdn.esoui.com/.../.zip...">`
-pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
-    let client = http_client();
+/// Strip BBCode tags for plain-text display.
+fn strip_bbcode(s: &str) -> String {
+    static RE_BBCODE: OnceLock<Regex> = OnceLock::new();
+    let re = RE_BBCODE.get_or_init(|| Regex::new(r"\[/?[A-Za-z]+[^\]]*\]").unwrap());
+    re.replace_all(s, "").trim().to_string()
+}
 
-    let info_url = format!("https://www.esoui.com/downloads/info{}", id);
-    let body = fetch_page(client, &info_url, None)?;
-    let document = Html::parse_document(&body);
+/// Format a number with comma separators (e.g., 1234567 → "1,234,567").
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result
+}
 
-    // Title from og:title meta
-    let meta_sel = Selector::parse(r#"meta[property="og:title"]"#).unwrap();
-    let title = document
-        .select(&meta_sel)
-        .next()
-        .and_then(|el| el.value().attr("content"))
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("Addon #{}", id));
+/// Format an epoch-millisecond timestamp as "MM/DD/YY HH:MM AM/PM".
+fn format_epoch_millis(millis: u64) -> String {
+    if millis == 0 {
+        return String::new();
+    }
+    // Use the metadata module's timestamp formatter for date portion
+    let secs = millis / 1000;
+    // Simple date format matching ESOUI's display: "MM/DD/YY HH:MM AM/PM"
+    // We'll use chrono-free approach: just format the epoch
+    let days = secs / 86400;
+    let day_secs = secs % 86400;
+    let mut hours = (day_secs / 3600) as u32;
+    let minutes = ((day_secs % 3600) / 60) as u32;
+    let ampm = if hours >= 12 { "PM" } else { "AM" };
+    if hours == 0 {
+        hours = 12;
+    } else if hours > 12 {
+        hours -= 12;
+    }
 
-    let version = extract_version(&document);
-
-    // Author from #author div
-    let author_sel = Selector::parse("#author").unwrap();
-    let author = document
-        .select(&author_sel)
-        .next()
-        .map(|el| {
-            let text = el.text().collect::<String>();
-            text.trim()
-                .strip_prefix("by:")
-                .unwrap_or(text.trim())
-                .trim()
-                .to_string()
-        })
-        .unwrap_or_default();
-
-    // Description from div.postmessage
-    let desc_sel = Selector::parse("div.postmessage").unwrap();
-    let description = document
-        .select(&desc_sel)
-        .next()
-        .map(|el| {
-            // Get text content, replacing <br> with newlines
-            let html = el.inner_html();
-            let stripped = html
-                .replace("<br>", "\n")
-                .replace("<br/>", "\n")
-                .replace("<br />", "\n")
-                .replace("&nbsp;", " ")
-                // Strip remaining HTML tags
-                .split('<')
-                .enumerate()
-                .map(|(i, part)| {
-                    if i == 0 {
-                        part.to_string()
-                    } else {
-                        part.split_once('>')
-                            .map_or("", |(_, rest)| rest)
-                            .to_string()
-                    }
-                })
-                .collect::<String>();
-            decode_html_entities(stripped.trim())
-        })
-        .unwrap_or_default();
-
-    // File size from #size
-    let size_sel = Selector::parse("#size").unwrap();
-    let file_size = document
-        .select(&size_sel)
-        .next()
-        .map(|el| el.text().collect::<String>().trim().to_string())
-        .unwrap_or_default();
-
-    // Extract table metadata by parsing rows with two td cells
-    let tr_sel = Selector::parse("tr").unwrap();
-    let td_plain_sel = Selector::parse("td").unwrap();
-    let mut compatibility = String::new();
-    let mut total_downloads = String::new();
-    let mut monthly_downloads = String::new();
-    let mut favorites = String::new();
-    let mut updated = String::new();
-    let mut created = String::new();
-
-    for tr in document.select(&tr_sel) {
-        let tds: Vec<_> = tr.select(&td_plain_sel).collect();
-        if tds.len() >= 2 {
-            let label = tds[0].text().collect::<String>();
-            let label = label.trim().trim_end_matches(':');
-            let value = tds[1].text().collect::<String>().trim().to_string();
-            match label {
-                "Compatibility" => compatibility = value,
-                "Total downloads" => total_downloads = value,
-                "Monthly downloads" => monthly_downloads = value,
-                "Favorites" => favorites = value,
-                "Updated" => updated = value,
-                "Created" => created = value,
-                _ => {}
-            }
+    // Convert days since epoch to date
+    let mut y: u32 = 1970;
+    let mut d = days;
+    loop {
+        let leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
+        let year_days: u64 = if leap { 366 } else { 365 };
+        if d < year_days {
+            break;
+        }
+        d -= year_days;
+        y += 1;
+        if y > 3000 {
+            return String::new();
         }
     }
-
-    // Screenshots from lightbox links
-    let lightbox_sel = Selector::parse(r#"a.lightbox[rel="filepics"]"#).unwrap();
-    let screenshots: Vec<String> = document
-        .select(&lightbox_sel)
-        .filter_map(|el| el.value().attr("href"))
-        .filter(|href| href.contains("preview") && !href.contains("thumb"))
-        .map(|href| {
-            if href.starts_with("//") {
-                format!("https:{}", href)
-            } else {
-                href.to_string()
-            }
-        })
-        .collect();
-
-    let download_url = fetch_download_url(client, id)?;
-
-    if title.is_empty() || title == format!("Addon #{}", id) {
-        return Err(format!(
-            "Could not extract addon title for addon {}. ESOUI may have changed their page layout.",
-            id
-        ));
+    let leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
+    let month_days: [u64; 12] = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    let mut m: u32 = 0;
+    for &md in &month_days {
+        if d < md {
+            break;
+        }
+        d -= md;
+        m += 1;
     }
 
+    format!(
+        "{:02}/{:02}/{:02} {:02}:{:02} {}",
+        m + 1,
+        d + 1,
+        y % 100,
+        hours,
+        minutes,
+        ampm
+    )
+}
+
+/// Fetch full addon details from the ESOUI JSON API.
+pub fn fetch_addon_detail(id: u32) -> Result<EsouiAddonDetail, String> {
+    let client = http_client();
+    let detail = fetch_file_detail(client, id)?;
+
+    let description = strip_bbcode(&detail.description);
+    let screenshots: Vec<String> = detail.images.into_iter().map(|img| img.image_url).collect();
+    let updated = format_epoch_millis(detail.last_update);
+
     Ok(EsouiAddonDetail {
-        id,
-        title,
-        version,
-        author,
+        id: detail.id,
+        title: detail.title,
+        version: detail.version,
+        author: detail.author,
         description,
-        compatibility,
-        file_size,
-        total_downloads,
-        monthly_downloads,
-        favorites,
+        compatibility: String::new(), // Not available from API; gameVersions in filelist covers this
+        file_size: String::new(),     // Not available from filedetails API
+        total_downloads: format_number(detail.downloads),
+        monthly_downloads: format_number(detail.downloads_monthly),
+        favorites: format_number(detail.favorites),
         updated,
-        created,
+        created: String::new(), // Not available from API
         screenshots,
-        download_url,
+        download_url: detail.download_uri,
     })
 }
 
@@ -616,9 +551,15 @@ pub fn browse_category(
         let id = match re_id.captures(href) {
             Some(caps) => match caps[1].parse::<u32>() {
                 Ok(id) => id,
-                Err(_) => continue,
+                Err(_) => {
+                    idx += 1;
+                    continue;
+                }
             },
-            None => continue,
+            None => {
+                idx += 1;
+                continue;
+            }
         };
 
         let category = categories.get(idx).cloned().unwrap_or_default();
