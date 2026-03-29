@@ -366,29 +366,6 @@ pub async fn search_esoui_addons(query: String) -> Result<Vec<EsouiSearchResult>
 }
 
 #[tauri::command]
-pub fn open_external_url(url: String) -> Result<(), String> {
-    // Only allow https URLs to prevent command injection
-    if !url.starts_with("https://") {
-        return Err("Only HTTPS URLs are allowed".to_string());
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn()
-            .map_err(|e| format!("Failed to open URL: {}", e))?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| format!("Failed to open URL: {}", e))?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
 pub fn install_addon(
     state: tauri::State<'_, AllowedAddonsPath>,
     addons_path: String,
