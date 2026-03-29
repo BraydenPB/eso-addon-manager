@@ -45,7 +45,7 @@ import {
   Loader2Icon,
   PlusIcon,
   XIcon,
-  HeartIcon,
+  ArrowUpIcon,
   CheckIcon,
   RefreshCwIcon,
   SparklesIcon,
@@ -85,6 +85,36 @@ const TAG_COLORS: Record<
   tank: "violet",
   beginner: "emerald",
   utility: "muted",
+};
+
+const PACK_TYPE_ACCENT: Record<
+  string,
+  { border: string; bg: string; hoverBg: string; text: string }
+> = {
+  "addon-pack": {
+    border: "border-l-[#c4a44a]/60",
+    bg: "bg-[#c4a44a]/[0.02]",
+    hoverBg: "hover:bg-[#c4a44a]/[0.06]",
+    text: "text-[#c4a44a]",
+  },
+  "build-pack": {
+    border: "border-l-sky-400/60",
+    bg: "bg-sky-400/[0.02]",
+    hoverBg: "hover:bg-sky-400/[0.06]",
+    text: "text-sky-400",
+  },
+  "roster-pack": {
+    border: "border-l-violet-400/60",
+    bg: "bg-violet-400/[0.02]",
+    hoverBg: "hover:bg-violet-400/[0.06]",
+    text: "text-violet-400",
+  },
+};
+
+const PACK_TYPE_PILL_COLOR: Record<string, "gold" | "sky" | "violet" | "muted"> = {
+  "addon-pack": "gold",
+  "build-pack": "sky",
+  "roster-pack": "violet",
 };
 
 const PRESET_TAGS = ["trial", "pvp", "beginner", "healer", "tank", "dps", "utility"] as const;
@@ -569,70 +599,104 @@ function PackListView({
             </p>
           </div>
         ) : (
-          packs.map((pack) => (
-            <button
-              key={pack.id}
-              onClick={() => onSelectPack(pack.id)}
-              className={cn(
-                "group w-full text-left rounded-xl border border-white/[0.06] bg-white/[0.02] p-3",
-                "transition-all duration-200",
-                "hover:bg-white/[0.05] hover:border-white/[0.12] hover:-translate-y-[1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.2)]",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400/50"
-              )}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-heading text-sm font-semibold truncate group-hover:text-[#c4a44a] transition-colors duration-200">
-                      {pack.title}
-                    </span>
-                    <InfoPill color="muted">{TYPE_LABELS[pack.packType] ?? pack.packType}</InfoPill>
+          packs.map((pack) => {
+            const accent = PACK_TYPE_ACCENT[pack.packType] ?? PACK_TYPE_ACCENT["addon-pack"];
+            const pillColor = PACK_TYPE_PILL_COLOR[pack.packType] ?? "muted";
+            return (
+              <button
+                key={pack.id}
+                onClick={() => onSelectPack(pack.id)}
+                className={cn(
+                  "group w-full text-left rounded-xl border border-white/[0.06] p-3",
+                  "border-l-[3px] transition-all duration-200",
+                  accent.border,
+                  accent.bg,
+                  accent.hoverBg,
+                  "hover:border-white/[0.12] hover:-translate-y-[1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.2)]",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400/50"
+                )}
+              >
+                {/* Top row: title + vote button */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading text-sm font-semibold truncate group-hover:text-[#c4a44a] transition-colors duration-200">
+                        {pack.title}
+                      </span>
+                      <InfoPill color={pillColor}>
+                        {TYPE_LABELS[pack.packType] ?? pack.packType}
+                      </InfoPill>
+                    </div>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                  {/* Vote button — right-aligned */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onVote(pack.id);
+                    }}
+                    title={
+                      authUser ? (pack.userVoted ? "Remove vote" : "Upvote") : "Sign in to vote"
+                    }
+                    className={cn(
+                      "group/vote relative flex flex-col items-center gap-0.5 text-xs font-semibold rounded-lg px-2 py-1.5 transition-all duration-200 border shrink-0",
+                      pack.userVoted
+                        ? "text-[#c4a44a] bg-[#c4a44a]/[0.12] border-[#c4a44a]/30 hover:bg-[#c4a44a]/[0.2] shadow-[0_0_8px_rgba(196,164,74,0.15)]"
+                        : "text-muted-foreground/50 bg-white/[0.03] border-white/[0.06] hover:text-[#c4a44a] hover:border-[#c4a44a]/20 hover:bg-[#c4a44a]/[0.06]"
+                    )}
+                  >
+                    <ArrowUpIcon
+                      className={cn(
+                        "size-3.5 transition-all duration-200",
+                        pack.userVoted
+                          ? "-translate-y-[1px]"
+                          : "group-hover/vote:-translate-y-[1px]"
+                      )}
+                      strokeWidth={pack.userVoted ? 2.5 : 2}
+                    />
+                    <span className="tabular-nums leading-none">
+                      {pack.voteCount > 0 ? pack.voteCount : 0}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Description */}
+                {pack.description && (
+                  <p className="mt-1.5 text-xs text-muted-foreground/70 line-clamp-2 leading-relaxed">
                     {pack.description}
                   </p>
-                  <div className="mt-2 flex items-center gap-2 flex-wrap">
-                    {pack.tags.map((tag) => (
-                      <InfoPill key={tag} color={TAG_COLORS[tag] ?? "muted"}>
-                        {tag}
-                      </InfoPill>
-                    ))}
-                    <span className="text-xs text-muted-foreground/50">
-                      {pack.addons.length} addon{pack.addons.length !== 1 ? "s" : ""}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onVote(pack.id);
-                      }}
-                      title={
-                        authUser ? (pack.userVoted ? "Remove vote" : "Upvote") : "Sign in to vote"
-                      }
-                      className={cn(
-                        "flex items-center gap-0.5 text-xs rounded-md px-1.5 py-0.5 transition-all duration-200",
-                        pack.userVoted
-                          ? "text-[#c4a44a] bg-[#c4a44a]/[0.08] hover:bg-[#c4a44a]/[0.15]"
-                          : "text-muted-foreground/50 hover:text-[#c4a44a]/70 hover:bg-white/[0.04]"
-                      )}
-                    >
-                      <HeartIcon
+                )}
+
+                {/* Bottom row: tags + meta */}
+                <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                  {pack.tags.map((tag) => (
+                    <InfoPill key={tag} color={TAG_COLORS[tag] ?? "muted"}>
+                      {tag}
+                    </InfoPill>
+                  ))}
+                  {pack.tags.length > 0 && pack.addons.length > 0 && (
+                    <span className="text-muted-foreground/20 mx-0.5">·</span>
+                  )}
+                  <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
+                    <PackageIcon className="size-3" />
+                    {pack.addons.length} addon{pack.addons.length !== 1 ? "s" : ""}
+                  </span>
+                  {!pack.isAnonymous && pack.authorName && (
+                    <span className="text-[11px] text-muted-foreground/40 ml-auto inline-flex items-center gap-1.5">
+                      <span
                         className={cn(
-                          "size-3 transition-transform duration-200",
-                          pack.userVoted && "fill-[#c4a44a] scale-110"
+                          "inline-flex items-center justify-center size-4 rounded-full text-[8px] font-bold uppercase leading-none",
+                          "bg-white/[0.08] text-muted-foreground/60"
                         )}
-                      />
-                      {pack.voteCount > 0 && pack.voteCount}
-                    </button>
-                    {!pack.isAnonymous && pack.authorName && (
-                      <span className="text-xs text-muted-foreground/40 ml-auto">
-                        by {pack.authorName}
+                      >
+                        {pack.authorName.charAt(0)}
                       </span>
-                    )}
-                  </div>
+                      {pack.authorName}
+                    </span>
+                  )}
                 </div>
-              </div>
-            </button>
-          ))
+              </button>
+            );
+          })
         )}
         {!loading && hasMore && (
           <button
@@ -712,19 +776,20 @@ function PackDetailView({
             authUser ? (pack.userVoted ? "Remove vote" : "Upvote this pack") : "Sign in to vote"
           }
           className={cn(
-            "flex items-center gap-1 text-xs rounded-md px-2 py-1 transition-all duration-200 ml-auto",
+            "group/vote relative flex items-center gap-1.5 text-sm font-medium rounded-full px-3 py-1.5 transition-all duration-200 border ml-auto",
             pack.userVoted
-              ? "text-[#c4a44a] bg-[#c4a44a]/[0.08] hover:bg-[#c4a44a]/[0.15]"
-              : "text-muted-foreground/50 hover:text-[#c4a44a]/70 hover:bg-white/[0.04]"
+              ? "text-[#c4a44a] bg-[#c4a44a]/[0.12] border-[#c4a44a]/30 hover:bg-[#c4a44a]/[0.2] shadow-[0_0_12px_rgba(196,164,74,0.15)]"
+              : "text-muted-foreground/60 bg-white/[0.03] border-white/[0.08] hover:text-[#c4a44a] hover:border-[#c4a44a]/20 hover:bg-[#c4a44a]/[0.06]"
           )}
         >
-          <HeartIcon
+          <ArrowUpIcon
             className={cn(
-              "size-3.5 transition-transform duration-200",
-              pack.userVoted && "fill-[#c4a44a] scale-110"
+              "size-4 transition-all duration-200",
+              pack.userVoted ? "-translate-y-[1px]" : "group-hover/vote:-translate-y-[1px]"
             )}
+            strokeWidth={pack.userVoted ? 2.5 : 2}
           />
-          {pack.voteCount > 0 ? pack.voteCount : "Vote"}
+          <span>{pack.voteCount > 0 ? pack.voteCount : 0}</span>
         </button>
       </div>
 
