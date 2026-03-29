@@ -1,3 +1,4 @@
+use crate::auth::{self, AuthState, AuthTokens, AuthUser};
 use crate::esoui::{self, EsouiAddonDetail, EsouiAddonInfo, EsouiCategory, EsouiSearchResult};
 use crate::installer;
 use crate::manifest::{self, AddonManifest};
@@ -1636,4 +1637,439 @@ pub fn migrate_from_minion(addons_path: String) -> Result<MinionMigrationResult,
         imported,
         already_tracked,
     })
+}
+
+// ── Pack Hub API (roster-hub-api) ──────────────────────────────────────────
+
+/// Base URL for the Pack Hub (shared with the website).
+fn pack_hub_url() -> &'static str {
+    static URL: OnceLock<String> = OnceLock::new();
+    URL.get_or_init(|| {
+        std::env::var("PACK_HUB_API_URL")
+            .unwrap_or_else(|_| "https://roster-hub-api.eso-toolkit.workers.dev".to_string())
+    })
+}
+
+fn pack_hub_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .user_agent(format!("ESOAddonManager/{}", env!("CARGO_PKG_VERSION")))
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .expect("failed to build pack hub HTTP client")
+    })
+}
+
+// ── Pack structs (matching roster-hub-api response) ───────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackAddonEntry {
+    pub esoui_id: u32,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub required: bool,
+    pub note: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Full pack object returned by the roster-hub-api.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct HubPack {
+    pub id: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub is_anonymous: bool,
+    pub title: String,
+    pub description: String,
+    pub pack_type: String,
+    pub addons: serde_json::Value, // JSON string from D1 or parsed array
+    pub vote_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub user_voted: Option<bool>,
+}
+
+/// Frontend-friendly pack struct sent to the webview.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pack {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub pack_type: String,
+    pub author_name: String,
+    pub is_anonymous: bool,
+    pub vote_count: i64,
+    pub tags: Vec<String>,
+    pub addons: Vec<PackAddonEntry>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Pack {
+    fn from_hub(hub: HubPack) -> Self {
+        let addons: Vec<PackAddonEntry> = match &hub.addons {
+            serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_else(|e| {
+                eprintln!(
+                    "Warning: failed to parse addons JSON string for pack {}: {}",
+                    hub.id, e
+                );
+                Vec::new()
+            }),
+            serde_json::Value::Array(_) => serde_json::from_value(hub.addons.clone())
+                .unwrap_or_else(|e| {
+                    eprintln!(
+                        "Warning: failed to parse addons array for pack {}: {}",
+                        hub.id, e
+                    );
+                    Vec::new()
+                }),
+            _ => {
+                eprintln!(
+                    "Warning: unexpected addons type for pack {}: {}",
+                    hub.id, hub.addons
+                );
+                Vec::new()
+            }
+        };
+        Self {
+            id: hub.id,
+            title: hub.title,
+            description: hub.description,
+            pack_type: hub.pack_type,
+            author_name: if hub.is_anonymous {
+                "Anonymous".to_string()
+            } else {
+                hub.author_name
+            },
+            is_anonymous: hub.is_anonymous,
+            vote_count: hub.vote_count,
+            tags: hub.tags,
+            addons,
+            created_at: hub.created_at,
+            updated_at: hub.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackListResponse {
+    pub packs: Vec<HubPack>,
+    pub page: i64,
+    pub sort: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackSingleResponse {
+    pub pack: HubPack,
+}
+
+/// Response sent to the frontend with packs and the current page number.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackPage {
+    pub packs: Vec<Pack>,
+    pub page: i64,
+}
+
+#[tauri::command]
+pub async fn list_packs(
+    pack_type: Option<String>,
+    tag: Option<String>,
+    query: Option<String>,
+    sort: Option<String>,
+    page: Option<i64>,
+) -> Result<PackPage, String> {
+    tokio::task::spawn_blocking(move || {
+        let client = pack_hub_client();
+        let base = pack_hub_url();
+        let url = format!("{}/packs", base);
+
+        let mut query_params: Vec<(&str, String)> = Vec::new();
+        if let Some(t) = &pack_type {
+            query_params.push(("type", t.clone()));
+        }
+        if let Some(t) = &tag {
+            query_params.push(("tag", t.clone()));
+        }
+        if let Some(q) = &query {
+            query_params.push(("q", q.clone()));
+        }
+        if let Some(s) = &sort {
+            query_params.push(("sort", s.clone()));
+        }
+        if let Some(p) = &page {
+            query_params.push(("page", p.to_string()));
+        }
+
+        let response = client.get(&url).query(&query_params).send().map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                "Could not connect to Pack Hub. Check your internet connection.".to_string()
+            } else {
+                format!("Network error: {}", e)
+            }
+        })?;
+
+        if !response.status().is_success() {
+            return Err(format!("Pack Hub returned HTTP {}", response.status()));
+        }
+
+        let body: PackListResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse packs response: {}", e))?;
+
+        Ok(PackPage {
+            packs: body.packs.into_iter().map(Pack::from_hub).collect(),
+            page: body.page,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn get_pack(id: String) -> Result<Pack, String> {
+    tokio::task::spawn_blocking(move || {
+        let client = pack_hub_client();
+        let base = pack_hub_url();
+        let url = format!("{}/packs/{}", base, id);
+
+        let response = client.get(&url).send().map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                "Could not connect to Pack Hub. Check your internet connection.".to_string()
+            } else {
+                format!("Network error: {}", e)
+            }
+        })?;
+
+        match response.status().as_u16() {
+            200 => {}
+            404 => return Err(format!("Pack \"{}\" not found.", id)),
+            status => return Err(format!("Pack Hub returned HTTP {}", status)),
+        }
+
+        let body: PackSingleResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse pack response: {}", e))?;
+
+        Ok(Pack::from_hub(body.pack))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+// ── Auth Helpers ─────────────────────────────────────────────────────────
+
+fn save_auth_tokens(app: &tauri::AppHandle, tokens: &AuthTokens) {
+    use tauri_plugin_store::StoreExt;
+    if let Ok(store) = app.store("settings.json") {
+        store.set(
+            "auth_tokens",
+            serde_json::to_value(tokens).unwrap_or_default(),
+        );
+    }
+}
+
+fn clear_auth_tokens(app: &tauri::AppHandle) {
+    use tauri_plugin_store::StoreExt;
+    if let Ok(store) = app.store("settings.json") {
+        let _ = store.delete("auth_tokens");
+    }
+}
+
+// ── Auth Commands ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn auth_login(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+) -> Result<AuthUser, String> {
+    let tokens = tokio::task::spawn_blocking(auth::login)
+        .await
+        .map_err(|e| format!("Task failed: {}", e))??;
+
+    let user = AuthUser {
+        user_id: tokens.user_id.clone(),
+        user_name: tokens.user_name.clone(),
+    };
+
+    // Save to store
+    save_auth_tokens(&app, &tokens);
+
+    // Update in-memory state
+    *state.0.lock().unwrap() = Some(tokens);
+
+    Ok(user)
+}
+
+#[tauri::command]
+pub async fn auth_logout(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    // Clear in-memory state
+    *state.0.lock().unwrap() = None;
+
+    // Clear from store
+    clear_auth_tokens(&app);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn auth_get_user(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+) -> Result<Option<AuthUser>, String> {
+    let tokens = {
+        let guard = state.0.lock().unwrap();
+        guard.clone()
+    };
+
+    let Some(tokens) = tokens else {
+        return Ok(None);
+    };
+
+    // Check if token needs refresh
+    match tokio::task::spawn_blocking({
+        let tokens = tokens.clone();
+        move || auth::ensure_valid_token(&tokens)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+    {
+        Ok(Some(new_tokens)) => {
+            // Tokens were refreshed — save them
+            let user = AuthUser {
+                user_id: new_tokens.user_id.clone(),
+                user_name: new_tokens.user_name.clone(),
+            };
+
+            save_auth_tokens(&app, &new_tokens);
+
+            *state.0.lock().unwrap() = Some(new_tokens);
+            Ok(Some(user))
+        }
+        Ok(None) => {
+            // Token still valid
+            Ok(Some(AuthUser {
+                user_id: tokens.user_id,
+                user_name: tokens.user_name,
+            }))
+        }
+        Err(_) => {
+            // Refresh failed — clear session
+            *state.0.lock().unwrap() = None;
+            clear_auth_tokens(&app);
+            Ok(None)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatePackPayload {
+    pub title: String,
+    pub description: String,
+    pub pack_type: String,
+    pub addons: Vec<PackAddonEntry>,
+    pub tags: Vec<String>,
+    pub is_anonymous: bool,
+}
+
+#[tauri::command]
+pub async fn create_pack(
+    state: tauri::State<'_, AuthState>,
+    app: tauri::AppHandle,
+    payload: CreatePackPayload,
+) -> Result<Pack, String> {
+    // Get current access token (refresh if needed)
+    let access_token = {
+        let tokens = {
+            let guard = state.0.lock().unwrap();
+            guard.clone()
+        };
+
+        let Some(tokens) = tokens else {
+            return Err("Not signed in. Please sign in first.".to_string());
+        };
+
+        match tokio::task::spawn_blocking({
+            let tokens = tokens.clone();
+            move || auth::ensure_valid_token(&tokens)
+        })
+        .await
+        .map_err(|e| format!("Task failed: {}", e))?
+        {
+            Ok(Some(new_tokens)) => {
+                let token = new_tokens.access_token.clone();
+                save_auth_tokens(&app, &new_tokens);
+                *state.0.lock().unwrap() = Some(new_tokens);
+                token
+            }
+            Ok(None) => tokens.access_token.clone(),
+            Err(e) => {
+                *state.0.lock().unwrap() = None;
+                return Err(e);
+            }
+        }
+    };
+
+    // POST to Pack Hub API
+    tokio::task::spawn_blocking(move || {
+        let client = pack_hub_client();
+        let base = pack_hub_url();
+        let url = format!("{}/packs", base);
+
+        let body = serde_json::json!({
+            "title": payload.title,
+            "description": payload.description,
+            "pack_type": payload.pack_type,
+            "addons": payload.addons,
+            "tags": payload.tags,
+            "is_anonymous": payload.is_anonymous,
+        });
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .map_err(|e| {
+                if e.is_connect() || e.is_timeout() {
+                    "Could not connect to Pack Hub. Check your internet connection.".to_string()
+                } else {
+                    format!("Network error: {}", e)
+                }
+            })?;
+
+        match response.status().as_u16() {
+            200 | 201 => {}
+            401 => return Err("Session expired. Please sign in again.".to_string()),
+            429 => {
+                return Err("Rate limit reached. Please wait before publishing again.".to_string())
+            }
+            status => {
+                let body = response.text().unwrap_or_default();
+                return Err(format!("Pack Hub returned HTTP {} — {}", status, body));
+            }
+        }
+
+        let body: PackSingleResponse = response
+            .json()
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        Ok(Pack::from_hub(body.pack))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }

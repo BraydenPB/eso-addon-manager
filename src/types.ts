@@ -130,3 +130,38 @@ export const PRESET_TAGS = ["favorite", "testing", "broken", "essential", "cosme
 export type PresetTag = (typeof PRESET_TAGS)[number];
 export type ViewMode = "installed" | "discover";
 export type DiscoverTab = "search" | "categories" | "url";
+
+// ── Pack types (from roster-hub-api Pack Hub) ─────────────────────────────
+export interface PackAddonEntry {
+  esouiId: number;
+  name: string;
+  required: boolean;
+  note?: string;
+}
+
+export type PackType = "addon-pack" | "build-pack" | "roster-pack";
+
+export interface Pack {
+  id: string;
+  title: string;
+  description: string;
+  packType: string;
+  authorName: string;
+  isAnonymous: boolean;
+  voteCount: number;
+  tags: string[];
+  addons: PackAddonEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PackPage {
+  packs: Pack[];
+  page: number;
+}
+
+// ── Auth types ────────────────────────────────────────────────────────────
+export interface AuthUser {
+  userId: string;
+  userName: string;
+}

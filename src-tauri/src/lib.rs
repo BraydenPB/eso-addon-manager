@@ -1,3 +1,4 @@
+mod auth;
 mod commands;
 mod esoui;
 mod installer;
@@ -9,7 +10,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 /// Stores the approved addons directory path. Commands that perform
@@ -17,6 +18,30 @@ use tauri::{
 /// value, preventing a compromised webview from targeting arbitrary
 /// filesystem locations.
 pub struct AllowedAddonsPath(pub Mutex<Option<PathBuf>>);
+
+/// Extract a pack ID from a deep link URL.
+/// Matches `eso-addon-manager://pack/{id}` or `eso-addon-manager://packs/{id}`.
+fn parse_deep_link(url: &str) -> Option<String> {
+    let url = url.trim();
+    let path = url
+        .strip_prefix("eso-addon-manager://pack/")
+        .or_else(|| url.strip_prefix("eso-addon-manager://packs/"))?;
+    let id = path.split(['/', '?', '#']).next()?.trim();
+    if id.is_empty() {
+        None
+    } else {
+        Some(id.to_string())
+    }
+}
+
+/// Emit a deep-link event to the frontend so it can open the pack dialog.
+fn emit_pack_deep_link(app: &tauri::AppHandle, pack_id: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    let _ = app.emit("deep-link-pack", pack_id);
+}
 
 pub fn run() {
     // Enable Chrome DevTools Protocol in debug builds only
@@ -28,13 +53,22 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AllowedAddonsPath(Mutex::new(None)))
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .manage(auth::AuthState(Mutex::new(None)))
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Focus the existing window when a duplicate instance is launched
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
+            // Check argv for deep link URLs (Windows/Linux pass them as CLI args)
+            for arg in &argv {
+                if let Some(pack_id) = parse_deep_link(arg) {
+                    emit_pack_deep_link(app, &pack_id);
+                    break;
+                }
+            }
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
@@ -44,6 +78,14 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            // Register the deep link scheme at runtime (for dev / non-installer builds)
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all();
+            }
+
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
@@ -83,6 +125,19 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // Load saved auth tokens from store
+            {
+                use tauri_plugin_store::StoreExt;
+                if let Ok(store) = app.store("settings.json") {
+                    if let Some(val) = store.get("auth_tokens") {
+                        if let Ok(tokens) = serde_json::from_value::<auth::AuthTokens>(val.clone())
+                        {
+                            *app.state::<auth::AuthState>().0.lock().unwrap() = Some(tokens);
+                        }
+                    }
+                }
+            }
 
             Ok(())
         })
@@ -125,6 +180,12 @@ pub fn run() {
             commands::backup_character_settings,
             commands::detect_minion,
             commands::migrate_from_minion,
+            commands::list_packs,
+            commands::get_pack,
+            commands::auth_login,
+            commands::auth_logout,
+            commands::auth_get_user,
+            commands::create_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
