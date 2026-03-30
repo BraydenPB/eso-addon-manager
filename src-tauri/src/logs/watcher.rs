@@ -1,6 +1,6 @@
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -36,6 +36,103 @@ impl Drop for LogWatchHandle {
 /// Callback invoked whenever new events are parsed from appended log data.
 pub type OnNewEvents = Box<dyn Fn(Vec<CombatEvent>) + Send + 'static>;
 
+/// Shared file-tailing loop used by both watchers.
+///
+/// Watches `path` for changes using `notify` with a polling fallback.
+/// Whenever new bytes are appended, reads the new portion and calls
+/// `on_new_data` with the text and current byte offset. Returns only
+/// when `stop_flag` is set to `true`.
+fn tail_file(
+    path: PathBuf,
+    initial_offset: u64,
+    stop_flag: Arc<Mutex<bool>>,
+    on_new_data: impl Fn(&str, u64) + Send + 'static,
+) {
+    let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+
+    let mut watcher = match RecommendedWatcher::new(
+        move |res| {
+            let _ = tx.send(res);
+        },
+        Config::default().with_poll_interval(Duration::from_secs(1)),
+    ) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("[log_watcher] Failed to create watcher: {}", e);
+            return;
+        }
+    };
+
+    if let Some(parent) = path.parent() {
+        if let Err(e) = watcher.watch(parent, RecursiveMode::NonRecursive) {
+            eprintln!("[log_watcher] Failed to watch directory: {}", e);
+            return;
+        }
+    }
+
+    let mut last_offset = initial_offset;
+    let mut last_check = Instant::now();
+
+    loop {
+        // Check stop flag
+        if let Ok(flag) = stop_flag.lock() {
+            if *flag {
+                break;
+            }
+        }
+
+        // Wait for file system events with a timeout
+        match rx.recv_timeout(Duration::from_millis(500)) {
+            Ok(Ok(event)) => {
+                if !matches!(event.kind, EventKind::Modify(_)) {
+                    continue;
+                }
+                let is_our_file = event.paths.iter().any(|p| p == &path);
+                if !is_our_file {
+                    continue;
+                }
+            }
+            Ok(Err(e)) => {
+                eprintln!("[log_watcher] Watch error: {}", e);
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Periodic check: also read if enough time has passed (fallback polling)
+                if last_check.elapsed() < Duration::from_secs(2) {
+                    continue;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+
+        last_check = Instant::now();
+
+        // Read new data from the file
+        let current_size = match std::fs::metadata(&path) {
+            Ok(m) => m.len(),
+            Err(_) => continue,
+        };
+
+        if current_size <= last_offset {
+            // File may have been truncated/rotated — reset
+            if current_size < last_offset {
+                last_offset = 0;
+            }
+            continue;
+        }
+
+        match read_range(&path, last_offset, current_size) {
+            Ok(new_text) => {
+                on_new_data(&new_text, last_offset);
+                last_offset = current_size;
+            }
+            Err(e) => {
+                eprintln!("[log_watcher] Failed to read new data: {}", e);
+            }
+        }
+    }
+}
+
 /// Start watching a log file for new data. Returns a handle to control the watcher.
 ///
 /// When new lines are appended to the file, they are parsed and the callback
@@ -57,97 +154,13 @@ pub fn watch_log_file(
     let stop_flag = Arc::new(Mutex::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
 
-    let path_clone = path.clone();
-
     let thread = thread::spawn(move || {
-        let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
-
-        let mut watcher = match RecommendedWatcher::new(
-            move |res| {
-                let _ = tx.send(res);
-            },
-            Config::default().with_poll_interval(Duration::from_secs(1)),
-        ) {
-            Ok(w) => w,
-            Err(e) => {
-                eprintln!("[log_watcher] Failed to create watcher: {}", e);
-                return;
+        tail_file(path, initial_size, stop_flag_clone, move |new_text, _offset| {
+            let events = parser::parse_chunk(new_text);
+            if !events.is_empty() {
+                on_events(events);
             }
-        };
-
-        if let Some(parent) = path_clone.parent() {
-            if let Err(e) = watcher.watch(parent, RecursiveMode::NonRecursive) {
-                eprintln!("[log_watcher] Failed to watch directory: {}", e);
-                return;
-            }
-        }
-
-        let mut last_offset = initial_size;
-        let mut last_check = Instant::now();
-
-        loop {
-            // Check stop flag
-            if let Ok(flag) = stop_flag_clone.lock() {
-                if *flag {
-                    break;
-                }
-            }
-
-            // Wait for file system events with a timeout
-            match rx.recv_timeout(Duration::from_millis(500)) {
-                Ok(Ok(event)) => {
-                    // Only process modify events for our target file
-                    if !matches!(event.kind, EventKind::Modify(_)) {
-                        continue;
-                    }
-                    let is_our_file = event.paths.iter().any(|p| p == &path_clone);
-                    if !is_our_file {
-                        continue;
-                    }
-                }
-                Ok(Err(e)) => {
-                    eprintln!("[log_watcher] Watch error: {}", e);
-                    continue;
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Periodic check: also read if enough time has passed (fallback polling)
-                    if last_check.elapsed() < Duration::from_secs(2) {
-                        continue;
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-
-            last_check = Instant::now();
-
-            // Read new data from the file
-            let current_size = match std::fs::metadata(&path_clone) {
-                Ok(m) => m.len(),
-                Err(_) => continue,
-            };
-
-            if current_size <= last_offset {
-                // File may have been truncated/rotated — reset
-                if current_size < last_offset {
-                    last_offset = 0;
-                }
-                continue;
-            }
-
-            // Read the new portion
-            match read_range(&path_clone, last_offset, current_size) {
-                Ok(new_text) => {
-                    let events = parser::parse_chunk(&new_text);
-                    if !events.is_empty() {
-                        on_events(events);
-                    }
-                    last_offset = current_size;
-                }
-                Err(e) => {
-                    eprintln!("[log_watcher] Failed to read new data: {}", e);
-                }
-            }
-        }
+        });
     });
 
     Ok(LogWatchHandle {
@@ -183,99 +196,23 @@ pub fn watch_log_lines(
     let stop_flag = Arc::new(Mutex::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
     let path_string = file_path.to_string();
-    let path_clone = path.clone();
 
     let thread = thread::spawn(move || {
-        let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+        tail_file(path, initial_size, stop_flag_clone, move |new_text, _offset| {
+            let lines: Vec<String> = new_text
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect();
 
-        let mut watcher = match RecommendedWatcher::new(
-            move |res| {
-                let _ = tx.send(res);
-            },
-            Config::default().with_poll_interval(Duration::from_secs(1)),
-        ) {
-            Ok(w) => w,
-            Err(e) => {
-                eprintln!("[log_line_watcher] Failed to create watcher: {}", e);
-                return;
+            if !lines.is_empty() {
+                let payload = LogUpdatedPayload {
+                    path: path_string.clone(),
+                    new_lines: lines,
+                };
+                let _ = app_handle.emit("log-updated", payload);
             }
-        };
-
-        if let Some(parent) = path_clone.parent() {
-            if let Err(e) = watcher.watch(parent, RecursiveMode::NonRecursive) {
-                eprintln!("[log_line_watcher] Failed to watch directory: {}", e);
-                return;
-            }
-        }
-
-        let mut last_offset = initial_size;
-        let mut last_check = Instant::now();
-
-        loop {
-            if let Ok(flag) = stop_flag_clone.lock() {
-                if *flag {
-                    break;
-                }
-            }
-
-            match rx.recv_timeout(Duration::from_millis(500)) {
-                Ok(Ok(event)) => {
-                    if !matches!(event.kind, EventKind::Modify(_)) {
-                        continue;
-                    }
-                    let is_our_file = event.paths.iter().any(|p| p == &path_clone);
-                    if !is_our_file {
-                        continue;
-                    }
-                }
-                Ok(Err(e)) => {
-                    eprintln!("[log_line_watcher] Watch error: {}", e);
-                    continue;
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    if last_check.elapsed() < Duration::from_secs(2) {
-                        continue;
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-
-            last_check = Instant::now();
-
-            let current_size = match std::fs::metadata(&path_clone) {
-                Ok(m) => m.len(),
-                Err(_) => continue,
-            };
-
-            if current_size <= last_offset {
-                if current_size < last_offset {
-                    last_offset = 0;
-                }
-                continue;
-            }
-
-            match read_range(&path_clone, last_offset, current_size) {
-                Ok(new_text) => {
-                    let lines: Vec<String> = new_text
-                        .lines()
-                        .filter(|l| !l.is_empty())
-                        .map(|l| l.to_string())
-                        .collect();
-
-                    if !lines.is_empty() {
-                        let payload = LogUpdatedPayload {
-                            path: path_string.clone(),
-                            new_lines: lines,
-                        };
-                        let _ = app_handle.emit("log-updated", payload);
-                    }
-                    last_offset = current_size;
-                }
-                Err(e) => {
-                    eprintln!("[log_line_watcher] Failed to read new data: {}", e);
-                }
-            }
-        }
+        });
     });
 
     Ok(LogWatchHandle {
