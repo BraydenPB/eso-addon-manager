@@ -7,13 +7,13 @@ use crate::metadata;
 use crate::AllowedAddonsPath;
 use crate::{PendingDeepLink, PendingDeepLinkPayload};
 use rayon::prelude::*;
-use tauri::Manager;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use tauri::Manager;
 
 /// Validate that `addons_path` matches the approved path stored in managed state.
 /// Prevents a compromised webview from targeting arbitrary filesystem locations.
