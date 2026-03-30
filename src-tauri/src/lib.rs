@@ -112,6 +112,7 @@ pub fn run() {
         .manage(logs::commands::LiveLogBuffer(Mutex::new(
             logs::commands::LiveBufferInner::default(),
         )))
+        .manage(logs::commands::LineLogWatcher(Mutex::new(None)))
         .manage(PendingDeepLink(Mutex::new(
             PendingDeepLinkPayload::default(),
         )))
@@ -270,6 +271,8 @@ pub fn run() {
             logs::commands::watch_log_start,
             logs::commands::watch_log_stop,
             logs::commands::get_live_status,
+            logs::commands::start_log_watch,
+            logs::commands::stop_log_watch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

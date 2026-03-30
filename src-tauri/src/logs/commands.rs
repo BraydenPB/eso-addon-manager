@@ -230,5 +230,46 @@ pub fn get_live_status(
     })
 }
 
+// ── Line-level log watch commands (emit Tauri events) ──────────────────
+
+/// Managed state holding the line-level log watcher handle (if any).
+pub struct LineLogWatcher(pub Mutex<Option<watcher::LogWatchHandle>>);
+
+/// Start watching a log file for new lines, emitting "log-updated" events.
+#[tauri::command]
+pub fn start_log_watch(
+    path: String,
+    app_handle: tauri::AppHandle,
+    watcher_state: State<'_, LineLogWatcher>,
+) -> Result<(), String> {
+    let mut guard = watcher_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock line watcher state")?;
+
+    // Stop any existing line watcher first
+    if let Some(handle) = guard.take() {
+        handle.stop();
+    }
+
+    let handle = watcher::watch_log_lines(&path, app_handle)?;
+    *guard = Some(handle);
+    Ok(())
+}
+
+/// Stop the line-level log watcher.
+#[tauri::command]
+pub fn stop_log_watch(watcher_state: State<'_, LineLogWatcher>) -> Result<(), String> {
+    let mut guard = watcher_state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock line watcher state")?;
+
+    if let Some(handle) = guard.take() {
+        handle.stop();
+    }
+    Ok(())
+}
+
 // We need Arc for the shared buffer in the watcher callback
 use std::sync::Arc;
