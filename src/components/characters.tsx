@@ -16,6 +16,7 @@ import { InfoPill } from "@/components/ui/info-pill";
 import { SectionHeader } from "@/components/ui/section-header";
 import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
 import { getSetting } from "@/lib/store";
+import { formatDuration } from "@/lib/utils";
 
 interface CharacterEncounter {
   encounter: Encounter;
@@ -281,10 +282,4 @@ export function Characters({ addonsPath, onClose, onViewLogs }: CharactersProps)
       </DialogContent>
     </Dialog>
   );
-}
-
-function formatDuration(secs: number): string {
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }

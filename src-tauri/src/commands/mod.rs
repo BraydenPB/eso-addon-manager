@@ -1,5 +1,3 @@
-pub mod logs;
-
 use crate::auth::{self, AuthState, AuthTokens, AuthUser};
 use crate::esoui::{self, EsouiAddonDetail, EsouiAddonInfo, EsouiCategory, EsouiSearchResult};
 use crate::installer;
