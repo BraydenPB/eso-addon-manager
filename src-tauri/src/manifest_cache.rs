@@ -1,4 +1,4 @@
-use crate::manifest::{self, AddonManifest};
+use crate::manifest::AddonManifest;
 use rusqlite::Connection;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
