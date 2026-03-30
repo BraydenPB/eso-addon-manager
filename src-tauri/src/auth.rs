@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 // ── Constants ────────────────────────────────────────────────────────────
 
 /// The website URL that handles the OAuth flow and passes tokens back.
+/// TODO: Update to production path before release (currently points to a PR preview).
 const APP_AUTH_URL: &str = "https://eso-toolkit.github.io/dev-previews/pr-925/app-auth";
 
 /// Derive the allowed CORS origin from APP_AUTH_URL so they stay in sync.
