@@ -28,6 +28,32 @@ impl Default for LiveBufferInner {
     }
 }
 
+/// Validate that a file path points to a `.log` file and doesn't contain
+/// path traversal sequences. This prevents a compromised webview from
+/// reading arbitrary files via the log analysis commands.
+fn validate_log_file_path(path: &str) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+
+    // Must have a .log extension
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if ext != "log" {
+        return Err("Only .log files can be analyzed".to_string());
+    }
+
+    // Reject paths containing traversal components
+    for component in p.components() {
+        if let std::path::Component::ParentDir = component {
+            return Err("Path traversal is not allowed".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 // ── Tauri commands ──────────────────────────────────────────────────────
 
 /// Detect the ESO log directory, using the addon path if available.
@@ -51,6 +77,7 @@ pub fn list_logs(logs_path: String) -> Result<Vec<LogFileInfo>, String> {
 /// Analyze a single log file: parse all events and detect encounters.
 #[tauri::command]
 pub fn analyze_log(file_path: String) -> Result<LogAnalysis, String> {
+    validate_log_file_path(&file_path)?;
     let content = std::fs::read_to_string(&file_path)
         .map_err(|e| format!("Failed to read log file: {}", e))?;
 
@@ -98,6 +125,7 @@ pub fn get_encounter_detail(
     file_path: String,
     encounter_index: usize,
 ) -> Result<Encounter, String> {
+    validate_log_file_path(&file_path)?;
     let content = std::fs::read_to_string(&file_path)
         .map_err(|e| format!("Failed to read log file: {}", e))?;
 
@@ -117,6 +145,7 @@ pub fn watch_log_start(
     watcher_state: State<'_, ActiveLogWatcher>,
     buffer_state: State<'_, LiveLogBuffer>,
 ) -> Result<(), String> {
+    validate_log_file_path(&file_path)?;
     // Stop any existing watcher first
     {
         let mut guard = watcher_state
