@@ -113,14 +113,6 @@ export interface LogPathDetection {
   message: string;
 }
 
-// ── Convenience aliases mirroring Rust structs ─────────────────────────
-
-export type LogFile = LogFileInfo;
-
-export type EncounterOutcome = "kill" | "wipe";
-
-export type ParsedLog = LogAnalysis;
-
 // ── Logs workspace view state ───────────────────────────────────────────
 
 export type LogsView = "home" | "log-detail" | "encounter-detail";

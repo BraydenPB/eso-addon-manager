@@ -225,6 +225,9 @@ pub fn watch_log_lines(
 }
 
 /// Read a byte range from a file and return it as a UTF-8 string.
+///
+/// Refuses to allocate more than 64 MiB to prevent OOM from corrupted
+/// metadata or extremely large appends.
 fn read_range(path: &Path, start: u64, end: u64) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
 
@@ -235,12 +238,21 @@ fn read_range(path: &Path, start: u64, end: u64) -> Result<String, String> {
         ));
     }
 
+    const MAX_READ: u64 = 64 * 1024 * 1024; // 64 MiB
+    let byte_len = end - start;
+    if byte_len > MAX_READ {
+        return Err(format!(
+            "Read too large: {} bytes exceeds {} byte limit",
+            byte_len, MAX_READ
+        ));
+    }
+
     let mut file = std::fs::File::open(path).map_err(|e| format!("Open failed: {}", e))?;
 
     file.seek(SeekFrom::Start(start))
         .map_err(|e| format!("Seek failed: {}", e))?;
 
-    let len = (end - start) as usize;
+    let len = byte_len as usize;
     let mut buf = vec![0u8; len];
     file.read_exact(&mut buf)
         .map_err(|e| format!("Read failed: {}", e))?;
