@@ -1,4 +1,4 @@
-import { ArrowLeft, Clock, Heart, Shield, Skull, Swords, User } from "lucide-react";
+import { ArrowLeft, Clock, Heart, Package, Shield, Skull, Swords, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GlassPanel } from "@/components/ui/glass-panel";
 import { InfoPill } from "@/components/ui/info-pill";
@@ -9,9 +9,10 @@ interface EncounterDetailProps {
   encounter: Encounter;
   logPath: string;
   onBack: () => void;
+  onViewAddonsAtDate?: (timestamp: number) => void;
 }
 
-export function EncounterDetail({ encounter, onBack }: EncounterDetailProps) {
+export function EncounterDetail({ encounter, onBack, onViewAddonsAtDate }: EncounterDetailProps) {
   const maxDps = Math.max(...encounter.players.map((p) => p.dps), 1);
   const maxHps = Math.max(...encounter.players.map((p) => p.hps), 1);
 
@@ -33,6 +34,16 @@ export function EncounterDetail({ encounter, onBack }: EncounterDetailProps) {
         <InfoPill color={encounter.isKill ? "emerald" : "red"}>
           {encounter.isKill ? "Kill" : "Wipe"}
         </InfoPill>
+        {onViewAddonsAtDate && (
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => onViewAddonsAtDate(encounter.startTime)}
+          >
+            <Package className="mr-1.5 size-3" data-icon="inline-start" />
+            View addons at this date
+          </Button>
+        )}
       </div>
 
       {/* Summary stats */}

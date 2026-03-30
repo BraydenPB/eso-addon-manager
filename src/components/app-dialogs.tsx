@@ -28,6 +28,7 @@ interface AppDialogsProps {
   onPathChange: (path: string) => void;
   onRefresh: () => void;
   onShowDialog: (dialog: Exclude<ActiveDialog, null>) => void;
+  onViewLogs?: (characterName: string) => void;
 }
 
 export function AppDialogs({
@@ -43,6 +44,7 @@ export function AppDialogs({
   onPathChange,
   onRefresh,
   onShowDialog,
+  onViewLogs,
 }: AppDialogsProps) {
   return (
     <>
@@ -70,7 +72,7 @@ export function AppDialogs({
       )}
 
       {activeDialog === "characters" && (
-        <Characters addonsPath={addonsPath} onClose={onCloseDialog} />
+        <Characters addonsPath={addonsPath} onClose={onCloseDialog} onViewLogs={onViewLogs} />
       )}
 
       {activeDialog === "settings" && (

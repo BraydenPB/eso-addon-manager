@@ -14,9 +14,11 @@ import { EncounterDetail } from "./encounter-detail";
 
 interface LogsWorkspaceProps {
   addonsPath: string;
+  onViewAddonsAtDate?: (timestamp: number) => void;
+  characterFilter?: string | null;
 }
 
-export function LogsWorkspace({ addonsPath }: LogsWorkspaceProps) {
+export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter }: LogsWorkspaceProps) {
   const [logsPath, setLogsPath] = useState<string | null>(null);
   const [detection, setDetection] = useState<LogPathDetection | null>(null);
   const [logFiles, setLogFiles] = useState<LogFileInfo[]>([]);
@@ -147,6 +149,7 @@ export function LogsWorkspace({ addonsPath }: LogsWorkspaceProps) {
           encounter={selectedEncounter}
           logPath={currentAnalysis?.file.path ?? ""}
           onBack={handleBack}
+          onViewAddonsAtDate={onViewAddonsAtDate}
         />
       ) : null;
 
@@ -160,6 +163,7 @@ export function LogsWorkspace({ addonsPath }: LogsWorkspaceProps) {
           onSetLogsPath={handleSetLogsPath}
           onOpenLog={handleOpenLog}
           onRefresh={handleRefreshFiles}
+          characterFilter={characterFilter}
         />
       );
   }
