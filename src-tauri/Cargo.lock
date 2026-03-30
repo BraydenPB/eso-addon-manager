@@ -1052,6 +1052,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "tokio",
+ "url",
  "zip 8.4.0",
 ]
 
