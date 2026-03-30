@@ -33,7 +33,14 @@ function requireAuth(request: Request, env: Env): boolean {
   return key === env.ADMIN_API_KEY;
 }
 
-/** Purge the CDN-cached pack list after a mutation. */
+/** Purge the CDN-cached pack list after a mutation.
+ *
+ * Only unfiltered `GET /packs` responses are cached (see `handleListPacks`).
+ * The cache key must match the exact URL used for `cache.put`, which is the
+ * bare `/packs` path with no query params. If `handleListPacks` is ever
+ * changed to cache filtered requests, this function must be updated to
+ * purge those keys as well.
+ */
 async function invalidatePackListCache(url: URL): Promise<void> {
   const cacheKey = new URL("/packs", url.origin).toString();
   await caches.default.delete(cacheKey);

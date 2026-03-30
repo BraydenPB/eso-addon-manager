@@ -536,24 +536,21 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
     }
 
     // Parse uncached manifests in parallel
-    let newly_parsed: Vec<AddonManifest> = uncached
+    let newly_parsed: Vec<(PathBuf, AddonManifest)> = uncached
         .par_iter()
         .filter_map(|(folder_name, manifest_path)| {
-            manifest::parse_manifest(folder_name, manifest_path)
+            let m = manifest::parse_manifest(folder_name, manifest_path)?;
+            Some((manifest_path.clone(), m))
         })
         .collect();
 
     // Store newly parsed manifests in the cache
     if let Some(ref conn) = cache_conn {
-        for m in &newly_parsed {
-            let manifest_path = match find_manifest(addons_dir, &m.folder_name) {
-                Some(p) => p,
-                None => continue,
-            };
-            manifest_cache::store_parsed(conn, &m.folder_name, &manifest_path, m);
+        for (manifest_path, m) in &newly_parsed {
+            manifest_cache::store_parsed(conn, &m.folder_name, manifest_path, m);
         }
     }
-    addons.extend(newly_parsed);
+    addons.extend(newly_parsed.into_iter().map(|(_, m)| m));
 
     // Build set of ALL directory names in AddOns folder for dependency checking.
     // This includes folders without manifests (data folders) and catches everything

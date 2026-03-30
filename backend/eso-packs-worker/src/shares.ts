@@ -16,11 +16,15 @@ const ESO_LOGS_API = "https://www.esologs.com/api/v2/user";
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-function json(request: Request, data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...corsHeaders(request) },
-  });
+function json(request: Request, data: unknown, status = 200, cacheMaxAge = 0): Response {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...corsHeaders(request),
+  };
+  if (cacheMaxAge > 0) {
+    headers["Cache-Control"] = `public, max-age=${cacheMaxAge}`;
+  }
+  return new Response(JSON.stringify(data), { status, headers });
 }
 
 function generateCode(): string {
@@ -209,21 +213,11 @@ export async function handleResolveShare(request: Request, env: Env, code: strin
     return json(request, { error: "Share code not found or expired" }, 404);
   }
 
-  // Return the pack data plus sharing metadata (cache for 5 min — share data is immutable)
-  return new Response(
-    JSON.stringify({
-      pack: record.pack,
-      sharedBy: record.createdByName,
-      sharedAt: record.createdAt,
-      expiresAt: record.expiresAt,
-    }),
-    {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=300",
-        ...corsHeaders(request),
-      },
-    },
-  );
+  // Share data is immutable — cache at CDN edge for 5 minutes
+  return json(request, {
+    pack: record.pack,
+    sharedBy: record.createdByName,
+    sharedAt: record.createdAt,
+    expiresAt: record.expiresAt,
+  }, 200, 300);
 }

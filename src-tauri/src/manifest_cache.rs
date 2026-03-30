@@ -69,22 +69,23 @@ pub fn store_parsed(
 }
 
 /// Remove stale entries from the cache for folders that no longer exist.
+/// Uses a direct parameterized IN clause — efficient for typical addon
+/// counts (under ~1000 folders).
 fn prune_stale(conn: &Connection, existing_folders: &[String]) {
     if existing_folders.is_empty() {
         let _ = conn.execute("DELETE FROM manifest_cache", []);
         return;
     }
-    let _ = conn.execute_batch("CREATE TEMP TABLE IF NOT EXISTS _existing (name TEXT PRIMARY KEY)");
-    let _ = conn.execute("DELETE FROM _existing", []);
-    if let Ok(mut stmt) = conn.prepare("INSERT INTO _existing (name) VALUES (?1)") {
-        for name in existing_folders {
-            let _ = stmt.execute([name]);
-        }
-    }
-    let _ = conn.execute(
-        "DELETE FROM manifest_cache WHERE folder_name NOT IN (SELECT name FROM _existing)",
-        [],
+    let placeholders: Vec<&str> = existing_folders.iter().map(|_| "?").collect();
+    let sql = format!(
+        "DELETE FROM manifest_cache WHERE folder_name NOT IN ({})",
+        placeholders.join(",")
     );
+    let params: Vec<&dyn rusqlite::types::ToSql> = existing_folders
+        .iter()
+        .map(|s| s as &dyn rusqlite::types::ToSql)
+        .collect();
+    let _ = conn.execute(&sql, params.as_slice());
 }
 
 /// Open the cache and prune stale entries. Returns the connection for use

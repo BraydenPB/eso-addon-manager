@@ -34,6 +34,8 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-opener = "2.5.3"
 rayon = "1"
+# "bundled" statically compiles SQLite (~1-2MB binary size increase) to avoid
+# depending on a system SQLite installation. Worth it for portable releases.
 rusqlite = { version = "0.31", features = ["bundled"] }
 
 [profile.release]
