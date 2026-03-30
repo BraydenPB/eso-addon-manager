@@ -3,7 +3,6 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173", // Vite dev (webapp)
   "http://localhost:3000", // Alt dev port
   "https://tauri.localhost", // Tauri production
-  "http://tauri.localhost", // Tauri production (http)
 ];
 
 function isAllowedOrigin(origin: string | null): boolean {

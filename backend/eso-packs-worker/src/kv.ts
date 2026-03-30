@@ -41,6 +41,12 @@ export function packToIndexItem(pack: Pack): PackIndexItem {
 // ── Vote helpers ──────────────────────────────────────────────────
 
 function voteKey(packId: string, userId: string): string {
+  // Guard against key injection: both segments must be safe KV key parts.
+  // packId is validated by ID_PATTERN elsewhere; userId comes from ESO Logs
+  // and should always be numeric, but we enforce that here defensively.
+  if (!/^\d+$/.test(userId)) {
+    throw new Error(`Invalid userId for KV key: ${userId}`);
+  }
   return `${VOTE_PREFIX}${packId}:${userId}`;
 }
 

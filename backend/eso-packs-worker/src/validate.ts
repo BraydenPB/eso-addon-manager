@@ -1,6 +1,6 @@
 import type { Pack, ValidationError } from "./types";
 
-const VALID_TYPES = ["addon-pack", "build-pack", "roster-pack"];
+export const VALID_TYPES = ["addon-pack", "build-pack", "roster-pack"];
 const ID_PATTERN = /^[a-z0-9-]+$/;
 const MAX_NAME_LENGTH = 100;
 const MAX_DESCRIPTION_LENGTH = 1000;

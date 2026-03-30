@@ -140,6 +140,11 @@ export async function handleCreateShare(request: Request, env: Env): Promise<Res
 
   const userId = String(user.id);
 
+  // Ensure userId is numeric to prevent KV key injection
+  if (!/^\d+$/.test(userId)) {
+    return json(request, { error: "Invalid user identity" }, 400);
+  }
+
   // Rate limit: max active shares per user
   const userKeys = await env.ESO_PACKS.list({ prefix: `share-user:${userId}:` });
   if (userKeys.keys.length >= MAX_SHARES_PER_USER) {

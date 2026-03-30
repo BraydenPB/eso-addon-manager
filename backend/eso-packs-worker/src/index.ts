@@ -1,7 +1,7 @@
 import type { Env, Pack, VoteResponse } from "./types";
 import { getPack, getPackIndex, packToIndexItem, putPack, putPackIndex, getVote, putVote, deleteVote } from "./kv";
 import { corsHeaders, handlePreflight } from "./cors";
-import { validatePack } from "./validate";
+import { validatePack, VALID_TYPES } from "./validate";
 import { SEED_PACKS } from "./seed";
 import { handleCreateShare, handleResolveShare, validateBearerToken } from "./shares";
 
@@ -60,6 +60,9 @@ async function handleListPacks(request: Request, env: Env, url: URL): Promise<Re
 
   const typeFilter = url.searchParams.get("type");
   if (typeFilter) {
+    if (!VALID_TYPES.includes(typeFilter)) {
+      return json(request, { error: `Invalid type filter. Must be one of: ${VALID_TYPES.join(", ")}` }, 400);
+    }
     items = items.filter((p) => p.type === typeFilter);
   }
 
@@ -115,10 +118,13 @@ async function handleCreatePack(request: Request, env: Env): Promise<Response> {
     return json(request, { error: `Pack "${pack.id}" already exists. Use PUT to update.` }, 409);
   }
 
-  // Stamp metadata timestamps
+  // Stamp metadata timestamps and enforce server-side identity.
+  // createdBy must not be trusted from the request body — set it from
+  // the authenticated context to prevent impersonation.
   const now = new Date().toISOString();
   pack.metadata.createdAt = now;
   pack.metadata.updatedAt = now;
+  pack.metadata.createdBy = "admin";
 
   await putPack(env, pack);
 
@@ -242,12 +248,17 @@ async function handleVotePack(
     return unauthorized(request);
   }
 
+  const userId = String(user.id);
+
+  // Ensure userId is numeric to prevent KV key injection
+  if (!/^\d+$/.test(userId)) {
+    return json(request, { error: "Invalid user identity" }, 400);
+  }
+
   const pack = await getPack(env, id);
   if (!pack) {
     return notFound(request, `Pack "${id}" not found`);
   }
-
-  const userId = String(user.id);
 
   const existingVote = await getVote(env, id, userId);
   let voted: boolean;
