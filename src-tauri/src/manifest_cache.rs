@@ -76,7 +76,7 @@ pub fn store_parsed(
 
 /// Remove stale entries from the cache for folders that no longer exist.
 /// Batches deletes in groups of 500 to stay under SQLite's 999-parameter limit.
-fn prune_stale(conn: &Connection, existing_folders: &[String]) {
+fn prune_stale(conn: &Connection, existing_folders: &[&str]) {
     if existing_folders.is_empty() {
         let _ = conn.execute("DELETE FROM manifest_cache", []);
         return;
@@ -111,7 +111,7 @@ fn prune_stale(conn: &Connection, existing_folders: &[String]) {
 /// Open the cache and prune stale entries. Returns the connection for use
 /// during the scan. If the cache can't be opened, returns None (caller
 /// should fall back to uncached parsing).
-pub fn open_and_prune(cache_dir: &Path, existing_folders: &[String]) -> Option<Connection> {
+pub fn open_and_prune(cache_dir: &Path, existing_folders: &[&str]) -> Option<Connection> {
     let conn = open_cache(cache_dir).ok()?;
     prune_stale(&conn, existing_folders);
     Some(conn)

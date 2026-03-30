@@ -245,7 +245,7 @@ export function AddonList({
     // 52px = 48px row content + 4px gap. Rows are single-line (title truncated
     // via CSS), so height is stable. measureElement corrects any deviation.
     estimateSize: () => 52,
-    overscan: 5,
+    overscan: 10,
   });
 
   const handleListKeyDown = useCallback(

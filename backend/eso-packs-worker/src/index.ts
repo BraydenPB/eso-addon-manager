@@ -107,9 +107,8 @@ async function handleGetPack(request: Request, env: Env, id: string): Promise<Re
   if (!pack) {
     return notFound(request, `Pack "${id}" not found`);
   }
-  // Per-resource response: use private to prevent shared caches from serving
-  // stale data across different clients after a mutation.
-  return json(request, pack, 200, 300, "private");
+  // Pack data is not user-specific — use public so CDN/shared caches can serve it.
+  return json(request, pack, 200, 300, "public");
 }
 
 // ── POST /packs — create a new pack ────────────────────────────────

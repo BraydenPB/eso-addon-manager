@@ -516,12 +516,10 @@ fn scan_installed_addons_blocking(
         })
         .collect();
 
-    // Collect folder names for cache pruning
-    let folder_names: Vec<String> = top_dirs.iter().map(|(name, _)| name.clone()).collect();
-
     // Open SQLite manifest cache in the app data dir (not the AddOns folder,
     // which ESO scans recursively and could cause odd behavior with a .db file).
-    let cache_conn = manifest_cache::open_and_prune(cache_dir, &folder_names);
+    let folder_names: Vec<&str> = top_dirs.iter().map(|(name, _)| name.as_str()).collect();
+    let mut cache_conn = manifest_cache::open_and_prune(cache_dir, &folder_names);
 
     // Two-pass strategy:
     // 1. Check the cache for each folder (sequential — SQLite is single-threaded)
@@ -556,8 +554,8 @@ fn scan_installed_addons_blocking(
 
     // Store newly parsed manifests in a single transaction for performance.
     // Without this, each INSERT is its own implicit transaction with a WAL flush.
-    if let Some(ref conn) = cache_conn {
-        if let Ok(tx) = conn.unchecked_transaction() {
+    if let Some(ref mut conn) = cache_conn {
+        if let Ok(tx) = conn.transaction() {
             for (manifest_path, m) in &newly_parsed {
                 manifest_cache::store_parsed(&tx, &m.folder_name, manifest_path, m);
             }
