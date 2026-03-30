@@ -61,15 +61,26 @@ pub fn parse_chunk(text: &str) -> Vec<CombatEvent> {
 pub fn parse_with_offsets(text: &str) -> Vec<(CombatEvent, u64, u64)> {
     let mut results = Vec::new();
     let mut byte_offset: u64 = 0;
-
-    // Detect line ending style: CRLF (Windows) vs LF (Unix)
-    let line_ending_len: u64 = if text.contains("\r\n") { 2 } else { 1 };
+    let raw = text.as_bytes();
 
     for line in text.lines() {
         let line_bytes = line.len() as u64;
         if let Some(event) = parse_line(line) {
             results.push((event, byte_offset, byte_offset + line_bytes));
         }
+
+        // Advance past the line content, then consume the actual line ending
+        let after_line = (byte_offset + line_bytes) as usize;
+        let line_ending_len = if raw.get(after_line) == Some(&b'\r')
+            && raw.get(after_line + 1) == Some(&b'\n')
+        {
+            2u64
+        } else if raw.get(after_line) == Some(&b'\n') {
+            1u64
+        } else {
+            0u64 // last line, no trailing newline
+        };
+
         byte_offset += line_bytes + line_ending_len;
     }
 

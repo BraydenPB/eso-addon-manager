@@ -228,6 +228,13 @@ pub fn watch_log_lines(
 fn read_range(path: &Path, start: u64, end: u64) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
 
+    if end < start {
+        return Err(format!(
+            "Invalid byte range: end ({}) < start ({})",
+            end, start
+        ));
+    }
+
     let mut file = std::fs::File::open(path).map_err(|e| format!("Open failed: {}", e))?;
 
     file.seek(SeekFrom::Start(start))
