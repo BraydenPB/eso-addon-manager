@@ -96,13 +96,11 @@ pub fn list_log_files(logs_dir: &str) -> Result<Vec<LogFileInfo>, String> {
             .modified()
             .ok()
             .and_then(|t| {
-                t.duration_since(std::time::UNIX_EPOCH)
-                    .ok()
-                    .map(|d| {
-                        // Simple ISO 8601 approximation
-                        let secs = d.as_secs();
-                        format!("{}", secs)
-                    })
+                t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| {
+                    // Simple ISO 8601 approximation
+                    let secs = d.as_secs();
+                    format!("{}", secs)
+                })
             })
             .unwrap_or_default();
 
