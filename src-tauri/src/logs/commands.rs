@@ -132,10 +132,14 @@ pub fn get_encounter_detail(
     let events_with_offsets = parser::parse_with_offsets(&content);
     let encounters = encounter::detect_encounters(&events_with_offsets);
 
-    encounters
-        .into_iter()
-        .find(|e| e.index == encounter_index)
-        .ok_or_else(|| format!("Encounter {} not found", encounter_index))
+    if encounter_index >= encounters.len() {
+        return Err(format!(
+            "Encounter index {} out of range (found {} encounters)",
+            encounter_index,
+            encounters.len()
+        ));
+    }
+    Ok(encounters.swap_remove(encounter_index))
 }
 
 /// Start watching a log file for live updates.
