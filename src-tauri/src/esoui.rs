@@ -110,7 +110,7 @@ fn http_client() -> &'static reqwest::blocking::Client {
     CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
             .user_agent(format!(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ESOAddonManager/{}",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Kalpa/{}",
                 env!("CARGO_PKG_VERSION")
             ))
             .timeout(std::time::Duration::from_secs(30))

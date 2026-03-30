@@ -1381,7 +1381,7 @@ fn backups_dir(addons_dir: &std::path::Path) -> PathBuf {
     addons_dir
         .parent()
         .unwrap_or(addons_dir)
-        .join("eso-addon-manager-backups")
+        .join("kalpa-backups")
 }
 
 fn saved_variables_dir(addons_dir: &std::path::Path) -> PathBuf {
@@ -1581,7 +1581,7 @@ pub struct ProfileStore {
 }
 
 fn profiles_path(addons_dir: &std::path::Path) -> PathBuf {
-    addons_dir.join("eso-addon-manager-profiles.json")
+    addons_dir.join("kalpa-profiles.json")
 }
 
 fn load_profiles(addons_dir: &std::path::Path) -> ProfileStore {
@@ -1696,7 +1696,7 @@ pub fn activate_profile(
             };
 
             // Skip non-addon folders and our own files
-            if folder_name.starts_with("eso-addon-manager") {
+            if folder_name.starts_with("kalpa") {
                 continue;
             }
 
@@ -2016,7 +2016,7 @@ fn pack_hub_client() -> &'static reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
-            .user_agent(format!("ESOAddonManager/{}", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!("Kalpa/{}", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(15))
             .build()
             .expect("failed to build pack hub HTTP client")
@@ -2709,7 +2709,7 @@ fn share_worker_client() -> &'static reqwest::blocking::Client {
     static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
-            .user_agent(format!("ESOAddonManager/{}", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!("Kalpa/{}", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(15))
             .build()
             .expect("failed to build share worker HTTP client")

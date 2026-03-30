@@ -14,7 +14,7 @@ export const SEED_PACKS: Pack[] = [
     tags: ["trial", "pve", "essential"],
     voteCount: 0,
     metadata: {
-      createdBy: "eso-addon-manager",
+      createdBy: "kalpa",
       createdAt: "2025-03-27T00:00:00Z",
       updatedAt: "2025-03-27T00:00:00Z",
       version: 1,
@@ -73,7 +73,7 @@ export const SEED_PACKS: Pack[] = [
     tags: ["trial", "pve", "healer"],
     voteCount: 0,
     metadata: {
-      createdBy: "eso-addon-manager",
+      createdBy: "kalpa",
       createdAt: "2025-03-27T00:00:00Z",
       updatedAt: "2025-03-27T00:00:00Z",
       version: 1,
@@ -140,7 +140,7 @@ export const SEED_PACKS: Pack[] = [
     tags: ["trial", "pve", "dps", "beginner"],
     voteCount: 0,
     metadata: {
-      createdBy: "eso-addon-manager",
+      createdBy: "kalpa",
       createdAt: "2025-03-27T00:00:00Z",
       updatedAt: "2025-03-27T00:00:00Z",
       version: 1,

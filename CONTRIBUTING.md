@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in contributing to ESO Addon Manager!
+Thanks for your interest in contributing to Kalpa!
 
 ## Getting Started
 
@@ -8,8 +8,8 @@ Thanks for your interest in contributing to ESO Addon Manager!
 2. Clone your fork and install dependencies:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/eso-addon-manager.git
-cd eso-addon-manager
+git clone https://github.com/YOUR_USERNAME/kalpa.git
+cd kalpa
 npm install
 ```
 
@@ -27,7 +27,7 @@ npm run tauri dev
 
 ## Development Workflow
 
-1. Create a branch from `master`: `git checkout -b feat/your-feature` or `fix/your-bug`
+1. Create a branch from `main`: `git checkout -b feat/your-feature` or `fix/your-bug`
 2. Make your changes
 3. Run checks before committing:
 
@@ -45,7 +45,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
    - `fix: resolve bug`
    - `refactor: restructure code`
    - `docs: update documentation`
-5. Open a pull request against `master`
+5. Open a pull request against `main`
 
 ## Code Style
 
@@ -63,6 +63,6 @@ See the project structure in the README and detailed docs in the `context/` dire
 
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/BraydenPB/eso-addon-manager/issues)
+- Use [GitHub Issues](https://github.com/ESO-Toolkit/kalpa/issues)
 - Include steps to reproduce, expected vs actual behavior
 - For security vulnerabilities, see [SECURITY.md](SECURITY.md)

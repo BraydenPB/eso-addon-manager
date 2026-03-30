@@ -1,25 +1,25 @@
-# ESO Addon Manager
+# Kalpa
 
-[![CI](https://github.com/BraydenPB/eso-addon-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/BraydenPB/eso-addon-manager/actions/workflows/ci.yml)
-[![Latest Release](https://img.shields.io/github/v/release/BraydenPB/eso-addon-manager?color=c4a44a)](https://github.com/BraydenPB/eso-addon-manager/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/ESO-Toolkit/kalpa/actions/workflows/ci.yml/badge.svg)](https://github.com/ESO-Toolkit/kalpa/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/ESO-Toolkit/kalpa?color=c4a44a)](https://github.com/ESO-Toolkit/kalpa/releases/latest)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](LICENSE)
 
 A fast, open-source addon manager for **The Elder Scrolls Online**. Built with Tauri, React, and Rust — designed as a modern alternative to Minion with community features, better dependency handling, and a native desktop experience.
 
 <p align="center">
-  <img src=".screenshots/main-desktop.png" alt="ESO Addon Manager — main view" width="800" />
+  <img src=".screenshots/main-desktop.png" alt="Kalpa — main view" width="800" />
 </p>
 
 ---
 
-## Why ESO Addon Manager?
+## Why Kalpa?
 
-Minion has served the ESO community well, but it hasn't kept pace with modern expectations. ESO Addon Manager is built from scratch to be **fast, lightweight, and community-driven**:
+Minion has served the ESO community well, but it hasn't kept pace with modern expectations. Kalpa is built from scratch to be **fast, lightweight, and community-driven**:
 
 - **Native performance** — Rust backend with a ~15 MB installer vs. Minion's Java runtime
 - **Automatic dependency resolution** — installs missing libraries without manual hunting
 - **Pack Hub** — share curated addon collections with the community (no other manager has this)
-- **Open source** — MIT licensed, community contributions welcome
+- **Open source** — community contributions welcome
 - **Active development** — regular updates and new features
 
 ---
@@ -45,7 +45,7 @@ Minion has served the ESO community well, but it hasn't kept pace with modern ex
 - **Upvote system** — vote on packs to surface the best collections
 - **Share codes** — generate temporary 6-character codes to share packs with friends
 - **File export** — save packs as `.esopack` files for offline sharing
-- **Deep links** — open packs directly via `eso-addon-manager://pack/` URLs
+- **Deep links** — open packs directly via `kalpa://pack/` URLs
 - **One-click install** — install all addons from a pack with a single click
 
 ### Tagging and Organization
@@ -90,7 +90,7 @@ Minion has served the ESO community well, but it hasn't kept pace with modern ex
 
 ### Pre-built (recommended)
 
-Download the latest Windows installer from the [Releases](https://github.com/BraydenPB/eso-addon-manager/releases/latest) page. Available as both `.exe` (NSIS) and `.msi` installers.
+Download the latest Windows installer from the [Releases](https://github.com/ESO-Toolkit/kalpa/releases/latest) page. Available as both `.exe` (NSIS) and `.msi` installers.
 
 ### Build from source
 
@@ -100,8 +100,8 @@ Download the latest Windows installer from the [Releases](https://github.com/Bra
 - Visual Studio Build Tools with "Desktop development with C++"
 
 ```bash
-git clone https://github.com/BraydenPB/eso-addon-manager.git
-cd eso-addon-manager
+git clone https://github.com/ESO-Toolkit/kalpa.git
+cd kalpa
 npm install
 npm run tauri dev       # development mode
 npm run tauri build     # production build
@@ -118,7 +118,7 @@ The production build outputs installers to `src-tauri/target/release/bundle/`.
 | **Manifest parser** | Reads `.txt` and `.addon` files from each addon folder — extracts title, version, author, dependencies, API version |
 | **Dependency resolver** | Scans the full AddOns tree (up to 3 levels deep) to find installed libraries, including those embedded inside other addons |
 | **ESOUI client** | Fetches addon metadata and downloads via ESOUI's public JSON API — no private APIs or screen scraping |
-| **Metadata tracker** | Persists ESOUI IDs, versions, tags, and install dates in `eso-addon-manager.json` inside your AddOns folder |
+| **Metadata tracker** | Persists ESOUI IDs, versions, tags, and install dates in `kalpa.json` inside your AddOns folder |
 | **Pack Hub worker** | Cloudflare Worker + KV that powers community pack sharing, voting, and share codes |
 
 ---
@@ -172,4 +172,4 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE)
+[BSL 1.1](LICENSE) — converts to Apache 2.0 four years after each release.

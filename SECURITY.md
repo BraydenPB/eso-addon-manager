@@ -2,9 +2,9 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in ESO Addon Manager, please report it responsibly.
+If you discover a security vulnerability in Kalpa, please report it responsibly.
 
-**Do not open a public issue.** Instead, email your report to the maintainers or use [GitHub's private vulnerability reporting](https://github.com/BraydenPB/eso-addon-manager/security/advisories/new).
+**Do not open a public issue.** Instead, email your report to the maintainers or use [GitHub's private vulnerability reporting](https://github.com/ESO-Toolkit/kalpa/security/advisories/new).
 
 Please include:
 
@@ -19,7 +19,7 @@ You should receive a response within 48 hours. We will work with you to understa
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
+| 0.3.x   | Yes       |
 
 ## Scope
 

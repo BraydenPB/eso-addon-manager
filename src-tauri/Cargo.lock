@@ -1067,7 +1067,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "eso-addon-manager"
+name = "kalpa"
 version = "0.3.0"
 dependencies = [
  "base64 0.22.1",

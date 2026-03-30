@@ -1,4 +1,4 @@
-# ESO Addon Manager – Claude Code Guide
+# Kalpa — Claude Code Guide
 
 You are Claude Code working in this repository. Optimize for **safety, clarity, and maintainability** while helping evolve this project.
 
@@ -6,13 +6,14 @@ You are Claude Code working in this repository. Optimize for **safety, clarity, 
 
 ## Mission & Current State
 
-ESO Addon Manager is an open‑source desktop app for managing Elder Scrolls Online addons. It is currently in a **functional alpha** state with:
+Kalpa is an open-source desktop app for managing Elder Scrolls Online addons. It is currently in a **functional alpha** state with:
 
 - Addon scanning and installation
 - Updates and dependency resolution
 - Backups and profiles
 - Character management and API compatibility checks
 - Minion migration support
+- Pack Hub for community addon collections
 
 Your job is to improve this app without breaking existing functionality or the build.
 
@@ -21,8 +22,8 @@ Your job is to improve this app without breaking existing functionality or the b
 ## Tech Stack Snapshot
 
 - **Desktop client**: Tauri v2 + React 19 + TypeScript + Tailwind v4 + shadcn-ui
-- **Backend (planned)**: Cloudflare Workers + KV (metadata caching only)
-- **CI/CD**: GitHub Actions with tag‑triggered release builds (Windows NSIS/MSI)
+- **Backend**: Cloudflare Workers + KV (Pack Hub)
+- **CI/CD**: GitHub Actions with tag-triggered release builds (Windows NSIS/MSI)
 
 When in doubt, prefer solutions that fit naturally into this stack.
 
@@ -38,9 +39,9 @@ Follow these rules unless explicitly directed otherwise:
   - Keep all scraping logic in `src-tauri/src/esoui.rs`.
 - **No background spam**
   - Do not implement hourly or aggressive background scraping.
-  - Use “on‑open” refresh plus an explicit **Refresh** button.
+  - Use "on-open" refresh plus an explicit **Refresh** button.
 - **Maintainability over cleverness**
-  - Prefer straightforward, well‑documented code over overly abstract solutions.
+  - Prefer straightforward, well-documented code over overly abstract solutions.
 - **Build must always pass**
   - Keep the repo buildable and tests/linters passing after each change.
 
@@ -98,12 +99,12 @@ When adding new logic, pick the closest existing file that matches the concern b
 
 Use **GitHub Flow**:
 
-1. `master` is always releasable.
-2. Create short‑lived branches such as:
+1. `main` is always releasable.
+2. Create short-lived branches such as:
    - `feat/feature-name`
    - `fix/bug-name`
-3. Open a PR, let CI pass, request review, then merge to `master`.
-4. Tag releases from `master` (for example `v0.2.0`) to trigger release CI.
+3. Open a PR, let CI pass, request review, then merge to `main`.
+4. Tag releases from `main` (for example `v0.3.0`) to trigger release CI.
 
 ### Commit Messages
 
@@ -121,14 +122,14 @@ When preparing a new release:
    - `tauri.conf.json`
    - `Cargo.toml`
    - `package.json`
-2. Push a tag `v*` (for example `v0.2.0`).
+2. Push a tag `v*` (for example `v0.3.0`).
 3. `.github/workflows/release.yml` builds Windows NSIS/MSI installers and attaches them to GitHub Releases.
 
 ---
 
 ## Design System Essentials
 
-The UI builds on the ESO Log Aggregator visual language, adapted to shadcn-ui and Tailwind v4. Respect the existing design system; do not introduce ad‑hoc styles if a primitive exists.
+The UI builds on the ESO Log Aggregator visual language, adapted to shadcn-ui and Tailwind v4. Respect the existing design system; do not introduce ad-hoc styles if a primitive exists.
 
 ### Reference Design Docs
 
@@ -140,7 +141,7 @@ Review these before UI work:
 
 ### Implemented UI Primitives
 
-Use these components instead of re‑rolling new ones:
+Use these components instead of re-rolling new ones:
 
 - `GlassPanel` (`components/ui/glass-panel.tsx`)
   - Variants: `primary`, `default`, `subtle`
@@ -151,13 +152,13 @@ Use these components instead of re‑rolling new ones:
 
 ### Overridden shadcn Components
 
-- `Input` — glass styling (translucent background, sky‑blue focus ring)
+- `Input` — glass styling (translucent background, sky-blue focus ring)
 - `Dialog` — glass morphism overlay with gradient background and gold gradient titles
-- `Toaster` — glass‑styled toasts
+- `Toaster` — glass-styled toasts
 
 ### Visual Rules
 
-- Always‑dark theme; no light mode.
+- Always-dark theme; no light mode.
 - Glass morphism panels:
   - Three tiers: `primary`, `default`, `subtle`.
 - Typography:
@@ -174,7 +175,7 @@ Use these components instead of re‑rolling new ones:
   - Timing scale: fast 150ms, normal 250ms, slow 400ms.
 - Colors:
   - ESO gold `#c4a44a` as primary accent.
-  - Sky‑blue `#38bdf8` for interactive and focus states.
+  - Sky-blue `#38bdf8` for interactive and focus states.
 
 ---
 
@@ -186,7 +187,7 @@ When performing changes, follow this workflow:
    - Skim the relevant `context/*.md` files for the area you are touching.
    - Always read `context/40-design-system.md` before any UI work.
 2. **Clarify intent**
-   - Restate the user’s goal and constraints before proposing changes.
+   - Restate the user's goal and constraints before proposing changes.
    - Prefer small, incremental improvements over broad refactors.
 3. **Plan the change**
    - Identify which files you will touch (both Rust and React).
@@ -198,7 +199,7 @@ When performing changes, follow this workflow:
    - Run `npm run tauri dev` locally (or instruct the user) to ensure the app still starts.
    - Run `npm run check`, `cargo clippy`, and `cargo fmt`.
 6. **Explain**
-   - When done, summarize what changed, why, and any follow‑up tasks or caveats.
+   - When done, summarize what changed, why, and any follow-up tasks or caveats.
 
 ---
 
@@ -207,7 +208,7 @@ When performing changes, follow this workflow:
 You can assume access (by the human developer) to:
 
 - `gh` — GitHub operations (PRs, issues, releases).
-- `wrangler` — Cloudflare Worker deployment (once backend work begins).
+- `wrangler` — Cloudflare Worker deployment.
 - Local Rust/Node toolchain:
   - `npm install`
   - `npm run tauri dev` — run the desktop app in development.
@@ -220,10 +221,6 @@ When suggesting steps, prefer commands that fit this toolchain.
 
 The Tauri WebView2 exposes Chrome DevTools Protocol (CDP) on **port 9222** via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` in `src-tauri/src/lib.rs`, guarded by `#[cfg(debug_assertions)]` so it is enabled **only in debug builds**.
 
-The Chrome DevTools MCP is configured on the developer machine (in `~/.claude/projects/.../settings.json`) to connect with:
-
-- `--browserUrl http://127.0.0.1:9222`
-
 ### Setup
 
 1. Run `npm run tauri dev`.
@@ -232,7 +229,7 @@ The Chrome DevTools MCP is configured on the developer machine (in `~/.claude/pr
 
 ### Capabilities
 
-Use CDP‑backed tools for visual debugging:
+Use CDP-backed tools for visual debugging:
 
 - `take_screenshot` — capture the current rendered UI.
 - `evaluate_script` — run JavaScript in the webview to inspect state or trigger actions.
@@ -245,7 +242,7 @@ Use CDP‑backed tools for visual debugging:
 
 1. The user starts `npm run tauri dev`.
 2. Claude connects via:
-   - `list_pages` → `navigate_page` to `http://localhost:1420` → `select_page`.
+   - `list_pages` -> `navigate_page` to `http://localhost:1420` -> `select_page`.
 3. Use `take_screenshot` to see the current state of the app.
 4. Use other CDP tools to inspect layout, state, network calls, and console messages.
 
@@ -260,7 +257,7 @@ Before large changes, consult these:
 - `context/00-overview.md` — Core vision and principles.
 - `context/10-desktop-client.md` — Desktop client architecture.
 - `context/20-metadata-worker.md` — Backend worker design.
-- `context/30-mvp-plan.md` — Original phase roadmap (phases 1–3 complete).
+- `context/30-mvp-plan.md` — Original phase roadmap.
 - `context/40-design-system.md` — Design language and visual rules.
 - `context/41-component-patterns.md` — Component patterns and best practices.
 - `context/42-theme-tokens.md` — Theme tokens and Tailwind integration.

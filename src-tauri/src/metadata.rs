@@ -39,7 +39,7 @@ impl Default for MetadataStore {
 }
 
 fn metadata_path(addons_path: &Path) -> std::path::PathBuf {
-    addons_path.join("eso-addon-manager.json")
+    addons_path.join("kalpa.json")
 }
 
 /// Load a JSON file with automatic backup recovery.

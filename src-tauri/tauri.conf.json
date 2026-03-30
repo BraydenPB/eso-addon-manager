@@ -1,7 +1,7 @@
 {
-  "productName": "ESO Addon Manager",
+  "productName": "Kalpa",
   "version": "0.3.0",
-  "identifier": "com.esoaddonmanager.desktop",
+  "identifier": "com.kalpa.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ESO Addon Manager",
+        "title": "Kalpa",
         "width": 1000,
         "height": 700,
         "minWidth": 800,
@@ -35,13 +35,13 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["eso-addon-manager"]
+        "schemes": ["kalpa"]
       }
     },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCRjNENzk1NzBDMjJGNEYKUldSUEw4SndsZGZ6cXdYZlZVYTNqVnlHNWI1cDdvL0NsK0xWZnllVmRWR1cybFF3WGlzdVVUbFQK",
       "endpoints": [
-        "https://github.com/BraydenPB/eso-addon-manager/releases/latest/download/latest.json"
+        "https://github.com/ESO-Toolkit/kalpa/releases/latest/download/latest.json"
       ]
     }
   },

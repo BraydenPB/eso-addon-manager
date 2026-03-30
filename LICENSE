@@ -1,21 +1,69 @@
-MIT License
+Business Source License 1.1
 
-Copyright (c) 2026 ESO Addon Manager Contributors
+Parameters
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Licensor: ESOTK team
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Licensed Work: Kalpa (all source code and associated files in this repository)
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Additional Use Grant: You may use, copy, modify, create derivative works, and distribute the Licensed Work for non-production and non-commercial purposes.
+
+Change Date: Four years after each portion of the Licensed Work is first made publicly available.
+
+Change License: Apache License, Version 2.0
+
+Terms
+
+Business Source License 1.1
+
+License text copyright (C) 2017 MariaDB Corporation Ab, All Rights Reserved.
+
+"Business Source License" is a trademark of MariaDB Corporation Ab.
+
+This Business Source License (this "License") is a License Agreement between Licensor and You (as defined below) governing the use of the Licensed Work. By using the Licensed Work, You agree to comply with all of the terms and conditions below.
+
+1. Definitions
+
+"Change Date" means the date specified in the Parameters.
+
+"Change License" means the license specified in the Parameters.
+
+"Licensed Work" means the work of authorship specified in the Parameters, including all modifications and additions made to that work from time to time by Licensor.
+
+"Licensor" means the individual or entity specified in the Parameters.
+
+"You" (or "Your") means an individual or a legal entity exercising permissions granted by this License.
+
+"Your Company" means the company you worked for when you accepted this License.
+
+"Use" means use, copy, modify, create derivative works, redistribute, make available, and run the Licensed Work.
+
+2. Grant of Rights
+
+Subject to the terms and conditions of this License, Licensor hereby grants You a non-exclusive, worldwide, royalty-free, non-transferable, non-sublicensable license to Use the Licensed Work in accordance with the terms of this License and the Additional Use Grant.
+
+3. Limitations
+
+The license granted in Section 2 is limited by the Additional Use Grant and by this Section 3.
+
+Any use of the Licensed Work not permitted by this License, including use beyond the Additional Use Grant, will automatically terminate Your rights under this License.
+
+4. Change Date and Change License
+
+On the Change Date, this License will automatically convert to the Change License for the applicable portion of the Licensed Work. The Change Date applies on a rolling basis as specified in the Parameters.
+
+5. Disclaimer
+
+THE LICENSED WORK IS PROVIDED "AS IS" WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+
+6. Limitation of Liability
+
+IN NO EVENT WILL LICENSOR BE LIABLE TO YOU FOR ANY DAMAGES, INCLUDING ANY DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, ARISING OUT OF OR RELATING TO THIS LICENSE OR THE USE OF THE LICENSED WORK.
+
+7. Termination
+
+This License terminates automatically if You fail to comply with any term of this License.
+
+8. Miscellaneous
+
+If any provision of this License is held unenforceable, that provision shall be interpreted to accomplish its objectives to the greatest extent possible, and the remaining provisions shall remain in full force and effect.

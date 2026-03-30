@@ -202,7 +202,7 @@ export async function handleCreateShare(request: Request, env: Env): Promise<Res
   const response: ShareCodeResponse = {
     code,
     expiresAt,
-    deepLink: `eso-addon-manager://share/${code}`,
+    deepLink: `kalpa://share/${code}`,
   };
 
   return json(request, response, 201);

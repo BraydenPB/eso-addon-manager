@@ -29,9 +29,9 @@ pub struct AllowedAddonsPath(pub Mutex<Option<ApprovedAddonsPath>>);
 /// Actions that can be triggered by a deep link URL.
 #[derive(Clone)]
 enum DeepLinkAction {
-    /// Open a pack by ID: `eso-addon-manager://pack/{id}`
+    /// Open a pack by ID: `kalpa://pack/{id}`
     Pack(String),
-    /// Import a shared pack by code: `eso-addon-manager://share/{code}`
+    /// Import a shared pack by code: `kalpa://share/{code}`
     Share(String),
 }
 
@@ -48,18 +48,18 @@ pub struct PendingDeepLink(pub Mutex<PendingDeepLinkPayload>);
 fn parse_deep_link(url: &str) -> Option<DeepLinkAction> {
     let url = url.trim();
 
-    // Share codes: eso-addon-manager://share/{code}
-    if let Some(rest) = url.strip_prefix("eso-addon-manager://share/") {
+    // Share codes: kalpa://share/{code}
+    if let Some(rest) = url.strip_prefix("kalpa://share/") {
         let code = rest.split(['/', '?', '#']).next()?.trim();
         if !code.is_empty() {
             return Some(DeepLinkAction::Share(code.to_string()));
         }
     }
 
-    // Pack IDs: eso-addon-manager://pack/{id} or eso-addon-manager://packs/{id}
+    // Pack IDs: kalpa://pack/{id} or kalpa://packs/{id}
     let path = url
-        .strip_prefix("eso-addon-manager://pack/")
-        .or_else(|| url.strip_prefix("eso-addon-manager://packs/"))?;
+        .strip_prefix("kalpa://pack/")
+        .or_else(|| url.strip_prefix("kalpa://packs/"))?;
     let id = path.split(['/', '?', '#']).next()?.trim();
     if id.is_empty() {
         None
@@ -159,7 +159,7 @@ pub fn run() {
                         .cloned()
                         .expect("default window icon must be set in tauri.conf.json"),
                 )
-                .tooltip("ESO Addon Manager")
+                .tooltip("Kalpa")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {

@@ -1,13 +1,13 @@
 [package]
-name = "eso-addon-manager"
+name = "kalpa"
 version = "0.3.0"
 edition = "2021"
 description = "A fast, open-source addon manager for The Elder Scrolls Online"
-license = "MIT"
-repository = "https://github.com/BraydenPB/eso-addon-manager"
+license = "BSL-1.1"
+repository = "https://github.com/ESO-Toolkit/kalpa"
 
 [lib]
-name = "eso_addon_manager_lib"
+name = "kalpa_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
