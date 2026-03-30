@@ -8,12 +8,14 @@ import { AppBackground } from "./components/app-background";
 import { AppDialogs } from "./components/app-dialogs";
 import { AppHeader } from "./components/app-header";
 import { DiscoverDetail } from "./components/discover-detail";
+import { SetupWizard } from "./components/setup-wizard";
 import { StatusBanners } from "./components/status-banners";
 import { UpdateBanner } from "./components/update-banner";
 import { getSetting, setSetting } from "@/lib/store";
 import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
 import type {
   AddonManifest,
+  AddonsDetectionResult,
   AuthUser,
   UpdateCheckResult,
   InstallResult,
@@ -81,6 +83,7 @@ function App() {
   const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
   const [batchRemoving, setBatchRemoving] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [setupDetection, setSetupDetection] = useState<AddonsDetectionResult | null>(null);
 
   const {
     state: appUpdateState,
@@ -327,20 +330,51 @@ function App() {
 
     const savedPath = await getSetting<string>("addonsPath", "");
 
-    try {
-      const path = savedPath || (await invokeOrThrow<string>("detect_addons_folder"));
-      setAddonsPath(path);
-      await invokeOrThrow("set_addons_path", { addonsPath: path });
-      await setSetting("addonsPath", path);
-      await scanAddons(path);
-      const autoUpdate = await getSetting<boolean>("autoUpdate", false);
-      await checkForUpdates(path, autoUpdate, false);
-      void runAutoLink(path);
-    } catch (initError) {
-      setError(
-        `Could not detect ESO AddOns folder. Please set it in Settings. ${getTauriErrorMessage(initError)}`
-      );
-      setLoading(false);
+    if (savedPath) {
+      // Saved path exists — use it directly
+      try {
+        setAddonsPath(savedPath);
+        await invokeOrThrow("set_addons_path", { addonsPath: savedPath });
+        await scanAddons(savedPath);
+        const autoUpdate = await getSetting<boolean>("autoUpdate", false);
+        await checkForUpdates(savedPath, autoUpdate, false);
+        void runAutoLink(savedPath);
+      } catch (initError) {
+        setError(
+          `Could not use saved AddOns folder. Please update it in Settings. ${getTauriErrorMessage(initError)}`
+        );
+        setLoading(false);
+      }
+    } else {
+      // No saved path — run detection and show wizard or auto-select
+      const detection = await invokeOrThrow<AddonsDetectionResult>("detect_addons_folders");
+
+      if (
+        detection.primary &&
+        detection.candidates.length === 1 &&
+        detection.warnings.length === 0
+      ) {
+        // Single clear candidate with no warnings — auto-select
+        try {
+          const path = detection.primary;
+          setAddonsPath(path);
+          await invokeOrThrow("set_addons_path", { addonsPath: path });
+          await setSetting("addonsPath", path);
+          await scanAddons(path);
+          const autoUpdate = await getSetting<boolean>("autoUpdate", false);
+          await checkForUpdates(path, autoUpdate, false);
+          void runAutoLink(path);
+        } catch (initError) {
+          setError(
+            `Could not use detected AddOns folder. Please set it in Settings. ${getTauriErrorMessage(initError)}`
+          );
+          setLoading(false);
+        }
+      } else {
+        // Multiple candidates, warnings, or no candidates — show wizard
+        setSetupDetection(detection);
+        setLoading(false);
+      }
     }
   }, [checkForUpdates, runAutoLink, scanAddons]);
 
@@ -390,6 +424,30 @@ function App() {
       setActiveTagFilter(null);
     }
   }, [activeTagFilter, addons]);
+
+  const handleSetupSelect = useCallback(
+    async (selectedPath: string) => {
+      const path = selectedPath.trim();
+      if (!path) return;
+
+      try {
+        await invokeOrThrow("set_addons_path", { addonsPath: path });
+        await setSetting("addonsPath", path);
+        setAddonsPath(path);
+        setSetupDetection(null);
+        setLoading(true);
+        await scanAddons(path);
+        const autoUpdate = await getSetting<boolean>("autoUpdate", false);
+        await checkForUpdates(path, autoUpdate, false);
+        void runAutoLink(path);
+      } catch (pathError) {
+        const message = getTauriErrorMessage(pathError);
+        setError(`Could not set addons folder: ${message}`);
+        toast.error(`Failed to set addons folder: ${message}`);
+      }
+    },
+    [checkForUpdates, runAutoLink, scanAddons]
+  );
 
   const handleRefresh = useCallback(() => {
     if (addonsPathRef.current) {
@@ -615,6 +673,15 @@ function App() {
     setDeepLinkPackId(null);
     setDeepLinkShareCode(null);
   }, []);
+
+  if (setupDetection) {
+    return (
+      <div className="relative flex h-screen flex-col">
+        <AppBackground />
+        <SetupWizard detection={setupDetection} onSelect={(path) => void handleSetupSelect(path)} />
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-screen flex-col">

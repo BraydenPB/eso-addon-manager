@@ -113,6 +113,20 @@ export interface MinionMigrationResult {
   alreadyTracked: number;
 }
 
+// ── Addon folder detection types ─────────────────────────────────────────
+export interface DetectedCandidate {
+  path: string;
+  serverEnv: string;
+  addonCount: number;
+  isOnedrive: boolean;
+}
+
+export interface AddonsDetectionResult {
+  primary: string | null;
+  candidates: DetectedCandidate[];
+  warnings: string[];
+}
+
 // App-level UI state types
 export type SortMode = "name" | "author";
 export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-deps" | "favorites";

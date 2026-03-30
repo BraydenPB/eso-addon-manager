@@ -215,6 +215,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::set_addons_path,
             commands::detect_addons_folder,
+            commands::detect_addons_folders,
             commands::scan_installed_addons,
             commands::set_addon_tags,
             commands::resolve_esoui_addon,
