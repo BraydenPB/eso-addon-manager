@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use url::Url;
 
 /// Validate that `addons_path` matches the approved path stored in managed state.
 /// Prevents a compromised webview from targeting arbitrary filesystem locations.
@@ -77,7 +78,7 @@ fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("Name cannot be empty.".to_string());
     }
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
+    if name.contains("..") || name.contains('/') || name.contains('\\') || name.contains('\0') {
         return Err("Name contains invalid characters.".to_string());
     }
 
@@ -664,10 +665,18 @@ pub async fn install_addon(
 ) -> Result<InstallResult, String> {
     let addons_dir = require_allowed_path(&state, &addons_path)?;
 
-    if !download_url.starts_with("https://cdn.esoui.com/")
-        && !download_url.starts_with("https://www.esoui.com/")
-    {
-        return Err("Invalid download URL: only ESOUI download links are allowed.".to_string());
+    let parsed_url =
+        Url::parse(&download_url).map_err(|_| "Invalid download URL.".to_string())?;
+    if parsed_url.scheme() != "https" {
+        return Err("Invalid download URL: HTTPS required.".to_string());
+    }
+    match parsed_url.host_str() {
+        Some("cdn.esoui.com") | Some("www.esoui.com") => {}
+        _ => {
+            return Err(
+                "Invalid download URL: only ESOUI download links are allowed.".to_string(),
+            )
+        }
     }
 
     tokio::task::spawn_blocking(move || {
@@ -1267,8 +1276,14 @@ pub fn check_api_compatibility(
             .map_err(|e| format!("Failed to read AddOnSettings.txt: {}", e))?;
         content
             .lines()
-            .find(|line| line.starts_with("#Version"))
-            .and_then(|line| line.strip_prefix("#Version").map(|s| s.trim()))
+            .find(|line| {
+                line.starts_with("## Version") || line.starts_with("#Version")
+            })
+            .and_then(|line| {
+                line.strip_prefix("## Version")
+                    .or_else(|| line.strip_prefix("#Version"))
+                    .map(|s| s.trim())
+            })
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(0)
     } else {
@@ -1435,7 +1450,7 @@ pub fn create_backup(
 
     fs::create_dir_all(&backup_path).map_err(|e| format!("Failed to create backup: {}", e))?;
 
-    // Copy all .lua files from SavedVariables
+    // Copy only .lua files from SavedVariables
     let mut file_count: u32 = 0;
     let mut total_size: u64 = 0;
     let entries =
@@ -1443,7 +1458,7 @@ pub fn create_backup(
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() {
+        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("lua") {
             if let Some(name) = path.file_name() {
                 let dest = backup_path.join(name);
                 if fs::copy(&path, &dest).is_ok() {
@@ -1493,7 +1508,7 @@ pub fn restore_backup(
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() {
+        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("lua") {
             if let Some(name) = path.file_name() {
                 let dest = sv_dir.join(name);
                 if fs::copy(&path, &dest).is_ok() {
@@ -1780,6 +1795,7 @@ pub fn backup_character_settings(
     if character_name.trim().is_empty() {
         return Err("Character name cannot be empty.".to_string());
     }
+    validate_name(&character_name)?;
     validate_name(&backup_name)?;
     let addons_dir = require_allowed_path(&state, &addons_path)?;
     let sv_dir = saved_variables_dir(&addons_dir);
@@ -1871,7 +1887,13 @@ fn parse_minion_addons(xml_content: &str) -> Vec<MinionAddon> {
                 }
             }
             current_uid = caps[1].parse::<u32>().ok();
-            current_version = caps[2].to_string();
+            // Limit version string length to prevent metadata bloat from malicious XML
+            let version = &caps[2];
+            current_version = if version.len() > 100 {
+                version[..100].to_string()
+            } else {
+                version.to_string()
+            };
             current_dirs = Vec::new();
         } else if let Some(caps) = re_dir.captures(line) {
             current_dirs.push(caps[1].to_string());
@@ -1919,6 +1941,10 @@ pub fn migrate_from_minion(
 
     for addon in &minion_addons {
         for folder in &addon.folders {
+            // Reject folder names that could cause path traversal
+            if validate_name(folder).is_err() {
+                continue;
+            }
             if store.addons.contains_key(folder) {
                 already_tracked += 1;
                 continue;
@@ -1952,12 +1978,31 @@ pub fn migrate_from_minion(
 
 // ── Pack Hub API (roster-hub-api) ──────────────────────────────────────────
 
+/// Validate that a runtime URL override is an HTTPS URL on a known domain.
+fn validate_api_url(url: &str, allowed_domains: &[&str]) -> bool {
+    if let Ok(parsed) = Url::parse(url) {
+        if parsed.scheme() != "https" {
+            return false;
+        }
+        if let Some(host) = parsed.host_str() {
+            return allowed_domains.iter().any(|d| host == *d || host.ends_with(&format!(".{}", d)));
+        }
+    }
+    false
+}
+
+const PACK_HUB_DEFAULT: &str = "https://roster-hub-api.eso-toolkit.workers.dev";
+
 /// Base URL for the Pack Hub (shared with the website).
 fn pack_hub_url() -> &'static str {
     static URL: OnceLock<String> = OnceLock::new();
     URL.get_or_init(|| {
-        std::env::var("PACK_HUB_API_URL")
-            .unwrap_or_else(|_| "https://roster-hub-api.eso-toolkit.workers.dev".to_string())
+        if let Ok(val) = std::env::var("PACK_HUB_API_URL") {
+            if validate_api_url(&val, &["eso-toolkit.workers.dev"]) {
+                return val;
+            }
+        }
+        PACK_HUB_DEFAULT.to_string()
     })
 }
 
@@ -2133,7 +2178,10 @@ pub async fn list_packs(
             query_params.push(("q", q.clone()));
         }
         if let Some(s) = &sort {
-            query_params.push(("sort", s.clone()));
+            // Only allow known sort values to prevent parameter injection
+            if matches!(s.as_str(), "votes" | "newest" | "updated") {
+                query_params.push(("sort", s.clone()));
+            }
         }
         if let Some(p) = &page {
             query_params.push(("page", p.to_string()));
@@ -2655,12 +2703,18 @@ pub async fn update_pack(
 
 // ── Private Sharing ─────────────────────────────────────────────────────────
 
+const SHARE_WORKER_DEFAULT: &str = "https://eso-packs-worker.eso-toolkit.workers.dev";
+
 /// Base URL for the share worker (separate from the pack hub).
 fn share_worker_url() -> &'static str {
     static URL: OnceLock<String> = OnceLock::new();
     URL.get_or_init(|| {
-        std::env::var("SHARE_WORKER_URL")
-            .unwrap_or_else(|_| "https://eso-packs-worker.eso-toolkit.workers.dev".to_string())
+        if let Ok(val) = std::env::var("SHARE_WORKER_URL") {
+            if validate_api_url(&val, &["eso-toolkit.workers.dev"]) {
+                return val;
+            }
+        }
+        SHARE_WORKER_DEFAULT.to_string()
     })
 }
 
@@ -2937,8 +2991,19 @@ pub fn import_pack_file(path: String) -> Result<EsoPackFile, String> {
         return Err("File not found.".to_string());
     }
 
+    // Canonicalize the path to resolve symlinks and traversal sequences
+    let safe_path = file_path
+        .canonicalize()
+        .map_err(|_| "Invalid file path.".to_string())?;
+
+    // Only allow .esopack extension
+    match safe_path.extension().and_then(|e| e.to_str()) {
+        Some("esopack") => {}
+        _ => return Err("File must have an .esopack extension.".to_string()),
+    }
+
     let contents =
-        fs::read_to_string(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+        fs::read_to_string(&safe_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     let pack: EsoPackFile =
         serde_json::from_str(&contents).map_err(|e| format!("Invalid .esopack file: {}", e))?;
