@@ -14,6 +14,7 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 import { SectionHeader } from "@/components/ui/section-header";
 import { InfoPill } from "@/components/ui/info-pill";
 import type { LogPathDetection, LogFileInfo, LiveSessionStatus } from "@/types/logs";
+import { LiveLoggingBar } from "./live-logging-bar";
 
 interface LogsHomeProps {
   logsPath: string | null;
@@ -177,6 +178,11 @@ export function LogsHome({
           <span className="text-xs text-muted-foreground">Filtered for character:</span>
           <InfoPill color="gold">{characterFilter}</InfoPill>
         </GlassPanel>
+      )}
+
+      {/* Live log tailing */}
+      {logFiles.length > 0 && (
+        <LiveLoggingBar logFilePath={logFiles[0].path} />
       )}
 
       {/* Log files list */}
