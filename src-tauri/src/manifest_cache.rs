@@ -3,9 +3,13 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-/// Open (or create) the manifest cache database in the AddOns directory.
-fn open_cache(addons_dir: &Path) -> Result<Connection, rusqlite::Error> {
-    let db_path = addons_dir.join(".eso-addon-manager-cache.db");
+/// Open (or create) the manifest cache database in the app data directory.
+/// Stored outside the ESO AddOns folder so the game's recursive folder scanner
+/// doesn't encounter unexpected files.
+fn open_cache(cache_dir: &Path) -> Result<Connection, rusqlite::Error> {
+    // Ensure the app data directory exists (Tauri doesn't guarantee it on first run)
+    let _ = std::fs::create_dir_all(cache_dir);
+    let db_path = cache_dir.join("manifest-cache.db");
     let conn = Connection::open(db_path)?;
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
@@ -107,8 +111,8 @@ fn prune_stale(conn: &Connection, existing_folders: &[String]) {
 /// Open the cache and prune stale entries. Returns the connection for use
 /// during the scan. If the cache can't be opened, returns None (caller
 /// should fall back to uncached parsing).
-pub fn open_and_prune(addons_dir: &Path, existing_folders: &[String]) -> Option<Connection> {
-    let conn = open_cache(addons_dir).ok()?;
+pub fn open_and_prune(cache_dir: &Path, existing_folders: &[String]) -> Option<Connection> {
+    let conn = open_cache(cache_dir).ok()?;
     prune_stale(&conn, existing_folders);
     Some(conn)
 }

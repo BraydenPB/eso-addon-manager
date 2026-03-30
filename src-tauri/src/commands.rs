@@ -7,6 +7,7 @@ use crate::metadata;
 use crate::AllowedAddonsPath;
 use crate::{PendingDeepLink, PendingDeepLinkPayload};
 use rayon::prelude::*;
+use tauri::Manager;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -481,16 +482,24 @@ pub fn detect_addons_folder() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn scan_installed_addons(
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, AllowedAddonsPath>,
     addons_path: String,
 ) -> Result<Vec<AddonManifest>, String> {
     let addons_dir = require_allowed_path(&state, &addons_path)?;
-    tokio::task::spawn_blocking(move || scan_installed_addons_blocking(&addons_dir))
+    let cache_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
+    tokio::task::spawn_blocking(move || scan_installed_addons_blocking(&addons_dir, &cache_dir))
         .await
         .map_err(|e| format!("Task failed: {}", e))?
 }
 
-fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest>, String> {
+fn scan_installed_addons_blocking(
+    addons_dir: &Path,
+    cache_dir: &Path,
+) -> Result<Vec<AddonManifest>, String> {
     let entries =
         fs::read_dir(addons_dir).map_err(|e| format!("Failed to read AddOns folder: {}", e))?;
 
@@ -510,8 +519,9 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
     // Collect folder names for cache pruning
     let folder_names: Vec<String> = top_dirs.iter().map(|(name, _)| name.clone()).collect();
 
-    // Open SQLite manifest cache (gracefully falls back to uncached if it fails)
-    let cache_conn = manifest_cache::open_and_prune(addons_dir, &folder_names);
+    // Open SQLite manifest cache in the app data dir (not the AddOns folder,
+    // which ESO scans recursively and could cause odd behavior with a .db file).
+    let cache_conn = manifest_cache::open_and_prune(cache_dir, &folder_names);
 
     // Two-pass strategy:
     // 1. Check the cache for each folder (sequential — SQLite is single-threaded)
