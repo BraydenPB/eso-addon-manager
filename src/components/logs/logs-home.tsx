@@ -22,6 +22,7 @@ interface LogsHomeProps {
   onSetLogsPath: (path: string) => void;
   onOpenLog: (file: LogFileInfo) => void;
   onRefresh: () => void;
+  characterFilter?: string | null;
 }
 
 export function LogsHome({
@@ -31,6 +32,7 @@ export function LogsHome({
   onSetLogsPath,
   onOpenLog,
   onRefresh,
+  characterFilter,
 }: LogsHomeProps) {
   const [liveStatus, setLiveStatus] = useState<LiveSessionStatus | null>(null);
   const [startingLive, setStartingLive] = useState(false);
@@ -166,6 +168,14 @@ export function LogsHome({
             {liveStatus.encountersCompleted} encounter
             {liveStatus.encountersCompleted !== 1 ? "s" : ""}
           </InfoPill>
+        </GlassPanel>
+      )}
+
+      {/* Character filter banner */}
+      {characterFilter && (
+        <GlassPanel variant="primary" className="flex items-center gap-3 px-4 py-2.5">
+          <span className="text-xs text-muted-foreground">Filtered for character:</span>
+          <InfoPill color="gold">{characterFilter}</InfoPill>
         </GlassPanel>
       )}
 
