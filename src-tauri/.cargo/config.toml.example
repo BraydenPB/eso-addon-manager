@@ -1,0 +1,4 @@
+[env]
+# ESO Logs OAuth client ID — required at build time.
+# Copy this file to config.toml and replace the placeholder with the real value.
+ESOLOGS_CLIENT_ID = "your-client-id-here"

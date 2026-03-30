@@ -9,6 +9,7 @@ target/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/keys
+src-tauri/.cargo/config.toml
 
 # Environment
 .env

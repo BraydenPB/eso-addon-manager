@@ -17,6 +17,13 @@ fn allowed_origin() -> String {
     parsed.origin().ascii_serialization()
 }
 
+/// OAuth client ID — injected at build time via `ESOLOGS_CLIENT_ID` env var.
+/// For local development, set this in your environment or `.cargo/config.toml`.
+const CLIENT_ID: &str = match option_env!("ESOLOGS_CLIENT_ID") {
+    Some(id) => id,
+    None => panic!("ESOLOGS_CLIENT_ID environment variable must be set at build time"),
+};
+
 const USER_API: &str = "https://www.esologs.com/api/v2/user";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -158,7 +165,14 @@ pub fn run_oauth_flow() -> Result<CallbackTokens, String> {
                 let mut buf = [0u8; 8192];
                 stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
                 let n = stream.read(&mut buf).unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..n]);
+                let request = match String::from_utf8(buf[..n].to_vec()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        let response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                        let _ = stream.write_all(response.as_bytes());
+                        continue;
+                    }
+                };
 
                 if let Some(tokens) = extract_tokens_from_request(&request) {
                     // Send success page
@@ -321,7 +335,7 @@ fn refresh_token_request(refresh_token: &str) -> Result<CallbackTokens, String> 
     let params = [
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
-        ("client_id", "9fd28ffc-300a-44ce-8a0e-6167db47a7e1"),
+        ("client_id", CLIENT_ID),
     ];
 
     let response = client
