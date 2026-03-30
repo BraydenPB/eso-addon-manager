@@ -2,6 +2,7 @@ mod auth;
 mod commands;
 mod esoui;
 mod installer;
+pub mod log_engine;
 pub mod logs;
 mod manifest;
 mod manifest_cache;
