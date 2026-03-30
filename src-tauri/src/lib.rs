@@ -2,7 +2,6 @@ mod auth;
 mod commands;
 mod esoui;
 mod installer;
-pub mod log_engine;
 pub mod logs;
 mod manifest;
 mod metadata;
@@ -272,9 +271,7 @@ pub fn run() {
             logs::commands::watch_log_start,
             logs::commands::watch_log_stop,
             logs::commands::get_live_status,
-            commands::logs::cmd_list_logs,
-            commands::logs::cmd_analyze_log,
-            commands::logs::get_logs_dir,
+            logs::commands::get_logs_dir,
             logs::commands::start_log_watch,
             logs::commands::stop_log_watch,
         ])

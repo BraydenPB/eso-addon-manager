@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 use super::{discovery, encounter, parser, types::*, watcher};
@@ -271,5 +271,43 @@ pub fn stop_log_watch(watcher_state: State<'_, LineLogWatcher>) -> Result<(), St
     Ok(())
 }
 
-// We need Arc for the shared buffer in the watcher callback
-use std::sync::Arc;
+/// Return the default ESO log directory path for the current platform.
+#[tauri::command]
+pub fn get_logs_dir() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            let path = std::path::PathBuf::from(profile)
+                .join("Documents")
+                .join("Elder Scrolls Online")
+                .join("live")
+                .join("Logs");
+            return Ok(path.to_string_lossy().into_owned());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            let path = home
+                .join("Documents")
+                .join("Elder Scrolls Online")
+                .join("live")
+                .join("Logs");
+            return Ok(path.to_string_lossy().into_owned());
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        if let Some(docs) = dirs::document_dir() {
+            let path = docs
+                .join("Elder Scrolls Online")
+                .join("live")
+                .join("Logs");
+            return Ok(path.to_string_lossy().into_owned());
+        }
+    }
+
+    Err("Could not determine the ESO log directory for this platform".to_string())
+}

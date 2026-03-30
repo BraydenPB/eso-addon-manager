@@ -62,13 +62,15 @@ pub fn parse_with_offsets(text: &str) -> Vec<(CombatEvent, u64, u64)> {
     let mut results = Vec::new();
     let mut byte_offset: u64 = 0;
 
+    // Detect line ending style: CRLF (Windows) vs LF (Unix)
+    let line_ending_len: u64 = if text.contains("\r\n") { 2 } else { 1 };
+
     for line in text.lines() {
         let line_bytes = line.len() as u64;
         if let Some(event) = parse_line(line) {
             results.push((event, byte_offset, byte_offset + line_bytes));
         }
-        // +1 for the newline character (approximate; handles \n and \r\n gracefully enough)
-        byte_offset += line_bytes + 1;
+        byte_offset += line_bytes + line_ending_len;
     }
 
     results

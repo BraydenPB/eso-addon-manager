@@ -4,6 +4,7 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 import { InfoPill } from "@/components/ui/info-pill";
 import { SectionHeader } from "@/components/ui/section-header";
 import type { Encounter, PlayerRole } from "@/types/logs";
+import { formatDuration } from "@/lib/utils";
 
 interface EncounterDetailProps {
   encounter: Encounter;
@@ -179,8 +180,3 @@ function RoleIcon({ role }: { role: PlayerRole }) {
   }
 }
 
-function formatDuration(secs: number): string {
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
