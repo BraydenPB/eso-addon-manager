@@ -10,11 +10,29 @@ import "./App.css";
 function showFatalError(msg: string) {
   const root = document.getElementById("root");
   if (!root) return;
-  root.innerHTML = `<div style="padding:32px;color:#ef4444;font-family:monospace;white-space:pre-wrap">
-    <h1 style="color:#fff;margin-bottom:16px">Fatal Error</h1>
-    <p>${msg}</p>
-    <p style="margin-top:16px;opacity:0.5">Try restarting the application.</p>
-  </div>`;
+
+  // Build DOM nodes instead of innerHTML to avoid HTML injection
+  const wrapper = document.createElement("div");
+  Object.assign(wrapper.style, {
+    padding: "32px",
+    color: "#ef4444",
+    fontFamily: "monospace",
+    whiteSpace: "pre-wrap",
+  });
+
+  const heading = document.createElement("h1");
+  Object.assign(heading.style, { color: "#fff", marginBottom: "16px" });
+  heading.textContent = "Fatal Error";
+
+  const message = document.createElement("p");
+  message.textContent = msg;
+
+  const hint = document.createElement("p");
+  Object.assign(hint.style, { marginTop: "16px", opacity: "0.5" });
+  hint.textContent = "Try restarting the application.";
+
+  wrapper.append(heading, message, hint);
+  root.replaceChildren(wrapper);
 }
 
 window.addEventListener("error", (e) => {

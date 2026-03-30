@@ -232,23 +232,248 @@ fn find_manifest(addons_dir: &std::path::Path, folder_name: &str) -> Option<Path
     None
 }
 
-fn default_addons_path() -> Option<PathBuf> {
-    let docs = dirs::document_dir()?;
-    let addons = docs
-        .join("Elder Scrolls Online")
-        .join("live")
-        .join("AddOns");
-    if addons.is_dir() {
-        Some(addons)
-    } else {
-        None
+// ── Enhanced addon folder detection ─────────────────────────────────────
+
+/// Candidate document root directories where ESO might store data.
+fn documents_candidates() -> Vec<PathBuf> {
+    let mut bases: Vec<PathBuf> = Vec::new();
+
+    if let Some(doc) = dirs::document_dir() {
+        bases.push(doc);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Raw USERPROFILE\Documents — can differ from Known Folder if user
+        // moved Documents to OneDrive or another location.
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            let alt = PathBuf::from(&userprofile).join("Documents");
+            if alt.is_dir() && !bases.iter().any(|b| b == &alt) {
+                bases.push(alt);
+            }
+        }
+
+        // Public Documents edge case (rare but documented)
+        let public = PathBuf::from(r"C:\Users\Public\Documents");
+        if public.is_dir() && !bases.iter().any(|b| b == &public) {
+            bases.push(public);
+        }
+    }
+
+    bases
+}
+
+/// All valid AddOns directories found across document roots and ESO environments.
+fn candidate_addons_dirs() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let envs = ["live", "liveeu", "pts"];
+
+    for base in documents_candidates() {
+        let eso_root = base.join("Elder Scrolls Online");
+        if !eso_root.is_dir() {
+            continue;
+        }
+        for env in &envs {
+            let addons = eso_root.join(env).join("AddOns");
+            if addons.is_dir() {
+                out.push(addons);
+            }
+        }
+    }
+
+    out
+}
+
+/// Score an AddOns directory to determine which is the "best" candidate.
+fn score_addons_dir(addons: &Path) -> i32 {
+    let mut score = 0;
+    let parent = addons.parent().unwrap_or(addons);
+
+    // ESO settings file means the game has actually been run in this env
+    if parent.join("AddOnSettings.txt").is_file() {
+        score += 3;
+    }
+    // SavedVariables dir means addon data exists here
+    if parent.join("SavedVariables").is_dir() {
+        score += 2;
+    }
+
+    // Count addon manifests (cap at 20 to avoid huge scans)
+    if let Ok(entries) = std::fs::read_dir(addons) {
+        let mut count = 0;
+        for entry in entries.flatten() {
+            if count >= 20 {
+                break;
+            }
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let folder_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            if find_manifest(addons, &folder_name).is_some() {
+                score += 1;
+                count += 1;
+            }
+        }
+    }
+
+    score
+}
+
+/// Check if a path is inside an OneDrive-synced directory.
+fn is_onedrive_path(p: &Path) -> bool {
+    p.ancestors().any(|a| {
+        a.file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.contains("OneDrive"))
+            .unwrap_or(false)
+    })
+}
+
+/// Collect user-facing warnings based on the selected primary path.
+fn collect_warnings(primary: &Path, candidates: &[PathBuf]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    if is_onedrive_path(primary) {
+        warnings.push(
+            "Your selected ESO AddOns folder is inside OneDrive. \
+             Cloud sync can sometimes cause missing or outdated addons. \
+             If you see issues, consider disabling sync for this folder."
+                .to_string(),
+        );
+    }
+
+    if candidates.len() > 1 {
+        warnings.push(
+            "Multiple ESO AddOns folders were detected. \
+             This can happen with NA/EU/PTS clients or when Documents is synced to the cloud."
+                .to_string(),
+        );
+    }
+
+    warnings
+}
+
+/// Return a sort priority for the server environment folder (lower = preferred).
+fn env_priority(addons: &Path) -> u8 {
+    let env = addons
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    match env {
+        "live" => 0,
+        "liveeu" => 1,
+        "pts" => 2,
+        _ => 3,
     }
 }
 
+/// Determine the server environment label from an AddOns path.
+fn detect_server_env(addons: &Path) -> String {
+    addons
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|env| match env {
+            "live" => "NA/EU Live".to_string(),
+            "liveeu" => "EU Live".to_string(),
+            "pts" => "PTS".to_string(),
+            other => other.to_string(),
+        })
+        .unwrap_or_default()
+}
+
+/// Count addon folders that have a valid manifest file.
+fn count_addon_manifests(addons: &Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(addons) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|e| {
+            let path = e.path();
+            if !path.is_dir() {
+                return false;
+            }
+            let name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => return false,
+            };
+            find_manifest(addons, &name).is_some()
+        })
+        .count()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedCandidate {
+    pub path: String,
+    pub server_env: String,
+    pub addon_count: usize,
+    pub is_onedrive: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddonsDetectionResult {
+    pub primary: Option<String>,
+    pub candidates: Vec<DetectedCandidate>,
+    pub warnings: Vec<String>,
+}
+
+#[tauri::command]
+pub fn detect_addons_folders() -> AddonsDetectionResult {
+    let candidates = candidate_addons_dirs();
+
+    if candidates.is_empty() {
+        return AddonsDetectionResult {
+            primary: None,
+            candidates: vec![],
+            warnings: vec![],
+        };
+    }
+
+    // Score and sort: highest score first; on tie, prefer live > liveeu > pts > unknown
+    let mut scored: Vec<(PathBuf, i32)> = candidates
+        .iter()
+        .map(|p| (p.clone(), score_addons_dir(p)))
+        .collect();
+    scored.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| env_priority(&a.0).cmp(&env_priority(&b.0)))
+    });
+
+    let primary_path = &scored[0].0;
+    let primary = Some(primary_path.to_string_lossy().to_string());
+    let warnings = collect_warnings(primary_path, &candidates);
+
+    let detected: Vec<DetectedCandidate> = scored
+        .iter()
+        .map(|(p, _)| DetectedCandidate {
+            path: p.to_string_lossy().to_string(),
+            server_env: detect_server_env(p),
+            addon_count: count_addon_manifests(p),
+            is_onedrive: is_onedrive_path(p),
+        })
+        .collect();
+
+    AddonsDetectionResult {
+        primary,
+        candidates: detected,
+        warnings,
+    }
+}
+
+/// Legacy detection command — thin wrapper for backwards compatibility.
 #[tauri::command]
 pub fn detect_addons_folder() -> Result<String, String> {
-    default_addons_path()
-        .map(|p| p.to_string_lossy().to_string())
+    let result = detect_addons_folders();
+    result
+        .primary
         .ok_or_else(|| "Could not find ESO AddOns folder. Please set it manually.".to_string())
 }
 

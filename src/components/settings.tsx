@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import { getSetting, setSetting } from "@/lib/store";
 import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
-import type { ImportResult } from "../types";
+import type { AddonsDetectionResult, ImportResult } from "../types";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,7 @@ export function Settings({
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [minionDetected, setMinionDetected] = useState(false);
   const [migrating, setMigrating] = useState(false);
+  const [redetecting, setRedetecting] = useState(false);
 
   useEffect(() => {
     void getSetting<boolean>("autoUpdate", false).then(setAutoUpdate);
@@ -75,6 +76,25 @@ export function Settings({
       }
     } catch (e) {
       toast.error(`Failed to open folder picker: ${e}`);
+    }
+  };
+
+  const handleRedetect = async () => {
+    setRedetecting(true);
+    try {
+      const result = await invokeOrThrow<AddonsDetectionResult>("detect_addons_folders");
+      if (result.primary && result.primary !== addonsPath) {
+        setPath(result.primary);
+        toast.success(`Found a better candidate: ${result.primary}. Click Save to apply.`);
+      } else if (result.primary) {
+        toast.info("Current folder is already the best candidate.");
+      } else {
+        toast.info("No ESO AddOns folders detected.");
+      }
+    } catch (e) {
+      toast.error(`Re-detection failed: ${getTauriErrorMessage(e)}`);
+    } finally {
+      setRedetecting(false);
     }
   };
 
@@ -142,6 +162,9 @@ export function Settings({
               />
               <Button variant="outline" size="sm" onClick={handleBrowse}>
                 Browse
+              </Button>
+              <Button variant="outline" size="sm" disabled={redetecting} onClick={handleRedetect}>
+                {redetecting ? "Detecting..." : "Re-detect"}
               </Button>
             </div>
           </div>
