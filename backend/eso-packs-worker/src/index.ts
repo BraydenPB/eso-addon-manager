@@ -27,14 +27,25 @@ function unauthorized(request: Request): Response {
   return json(request, { error: "Invalid or missing API key" }, 401);
 }
 
-function requireAuth(request: Request, env: Env): boolean {
+async function requireAuth(request: Request, env: Env): Promise<boolean> {
   const key = request.headers.get("X-API-Key");
   if (!key || !env.ADMIN_API_KEY) return false;
-  // Constant-time comparison to prevent timing attacks
-  if (key.length !== env.ADMIN_API_KEY.length) return false;
+  // Hash both values with HMAC before comparing to avoid leaking
+  // the key length via the early-return that timingSafeEqual needs
+  // for equal-length buffers.
+  const algorithm = { name: "HMAC", hash: "SHA-256" };
   const encoder = new TextEncoder();
-  const a = encoder.encode(key);
-  const b = encoder.encode(env.ADMIN_API_KEY);
+  const hmacKey = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode("requireAuth"),
+    algorithm,
+    false,
+    ["sign"],
+  );
+  const [a, b] = await Promise.all([
+    crypto.subtle.sign(algorithm, hmacKey, encoder.encode(key)),
+    crypto.subtle.sign(algorithm, hmacKey, encoder.encode(env.ADMIN_API_KEY)),
+  ]);
   return crypto.subtle.timingSafeEqual(a, b);
 }
 
@@ -80,7 +91,7 @@ async function handleGetPack(request: Request, env: Env, id: string): Promise<Re
 
 // ── POST /packs — create a new pack ────────────────────────────────
 async function handleCreatePack(request: Request, env: Env): Promise<Response> {
-  if (!requireAuth(request, env)) {
+  if (!(await requireAuth(request, env))) {
     return unauthorized(request);
   }
 
@@ -125,7 +136,7 @@ async function handleUpdatePack(
   env: Env,
   id: string,
 ): Promise<Response> {
-  if (!requireAuth(request, env)) {
+  if (!(await requireAuth(request, env))) {
     return unauthorized(request);
   }
 
@@ -174,7 +185,7 @@ async function handleDeletePack(
   env: Env,
   id: string,
 ): Promise<Response> {
-  if (!requireAuth(request, env)) {
+  if (!(await requireAuth(request, env))) {
     return unauthorized(request);
   }
 
@@ -195,7 +206,7 @@ async function handleDeletePack(
 
 // ── POST /admin/seed (dev only) ────────────────────────────────────
 async function handleSeed(request: Request, env: Env): Promise<Response> {
-  if (!requireAuth(request, env)) {
+  if (!(await requireAuth(request, env))) {
     return unauthorized(request);
   }
   const errors: string[] = [];
@@ -242,13 +253,17 @@ async function handleVotePack(
   let voted: boolean;
 
   if (existingVote) {
-    // Unvote
+    // Unvote — delete vote record first, then re-read pack to reduce race window
     await deleteVote(env, id, userId);
+    const freshPack = await getPack(env, id);
+    if (freshPack) Object.assign(pack, freshPack);
     pack.voteCount = Math.max(0, (pack.voteCount ?? 0) - 1);
     voted = false;
   } else {
-    // Upvote
+    // Upvote — write vote record first, then re-read pack to reduce race window
     await putVote(env, id, userId);
+    const freshPack = await getPack(env, id);
+    if (freshPack) Object.assign(pack, freshPack);
     pack.voteCount = (pack.voteCount ?? 0) + 1;
     voted = true;
   }

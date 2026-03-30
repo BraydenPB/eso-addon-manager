@@ -24,9 +24,22 @@ function json(request: Request, data: unknown, status = 200): Response {
 }
 
 function generateCode(): string {
-  const bytes = new Uint8Array(CODE_LENGTH);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join("");
+  // Use rejection sampling to avoid modulo bias.
+  // ALPHABET.length is 31 (not a power of 2), so naive b % len
+  // would map some characters more frequently than others.
+  const limit = Math.floor(256 / ALPHABET.length) * ALPHABET.length; // 248
+  const result: string[] = [];
+  while (result.length < CODE_LENGTH) {
+    const bytes = new Uint8Array(CODE_LENGTH - result.length);
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) {
+      if (b < limit) {
+        result.push(ALPHABET[b % ALPHABET.length]);
+        if (result.length === CODE_LENGTH) break;
+      }
+    }
+  }
+  return result.join("");
 }
 
 function shareKey(code: string): string {
