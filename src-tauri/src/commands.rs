@@ -333,13 +333,13 @@ fn is_onedrive_path(p: &Path) -> bool {
     })
 }
 
-/// Collect user-facing warnings based on the detected candidates.
-fn collect_warnings(candidates: &[PathBuf]) -> Vec<String> {
+/// Collect user-facing warnings based on the selected primary path.
+fn collect_warnings(primary: &Path, candidates: &[PathBuf]) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    if candidates.iter().any(|p| is_onedrive_path(p)) {
+    if is_onedrive_path(primary) {
         warnings.push(
-            "Your ESO AddOns folder appears to be inside OneDrive. \
+            "Your selected ESO AddOns folder is inside OneDrive. \
              Cloud sync can sometimes cause missing or outdated addons. \
              If you see issues, consider disabling sync for this folder."
                 .to_string(),
@@ -355,6 +355,21 @@ fn collect_warnings(candidates: &[PathBuf]) -> Vec<String> {
     }
 
     warnings
+}
+
+/// Return a sort priority for the server environment folder (lower = preferred).
+fn env_priority(addons: &Path) -> u8 {
+    let env = addons
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    match env {
+        "live" => 0,
+        "liveeu" => 1,
+        "pts" => 2,
+        _ => 3,
+    }
 }
 
 /// Determine the server environment label from an AddOns path.
@@ -413,30 +428,28 @@ pub struct AddonsDetectionResult {
 #[tauri::command]
 pub fn detect_addons_folders() -> AddonsDetectionResult {
     let candidates = candidate_addons_dirs();
-    let warnings = collect_warnings(&candidates);
 
     if candidates.is_empty() {
         return AddonsDetectionResult {
             primary: None,
             candidates: vec![],
-            warnings,
+            warnings: vec![],
         };
     }
 
-    // Score and sort: highest score first, prefer "live" over "liveeu" on tie
+    // Score and sort: highest score first; on tie, prefer live > liveeu > pts > unknown
     let mut scored: Vec<(PathBuf, i32)> = candidates
         .iter()
         .map(|p| (p.clone(), score_addons_dir(p)))
         .collect();
     scored.sort_by(|a, b| {
-        b.1.cmp(&a.1).then_with(|| {
-            let a_live = a.0.to_string_lossy().contains("liveeu");
-            let b_live = b.0.to_string_lossy().contains("liveeu");
-            a_live.cmp(&b_live)
-        })
+        b.1.cmp(&a.1)
+            .then_with(|| env_priority(&a.0).cmp(&env_priority(&b.0)))
     });
 
-    let primary = scored.first().map(|(p, _)| p.to_string_lossy().to_string());
+    let primary_path = &scored[0].0;
+    let primary = Some(primary_path.to_string_lossy().to_string());
+    let warnings = collect_warnings(primary_path, &candidates);
 
     let detected: Vec<DetectedCandidate> = scored
         .iter()

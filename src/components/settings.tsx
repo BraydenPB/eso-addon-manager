@@ -85,7 +85,7 @@ export function Settings({
       const result = await invokeOrThrow<AddonsDetectionResult>("detect_addons_folders");
       if (result.primary && result.primary !== addonsPath) {
         setPath(result.primary);
-        toast.success(`Found a better candidate: ${result.primary}`);
+        toast.success(`Found a better candidate: ${result.primary}. Click Save to apply.`);
       } else if (result.primary) {
         toast.info("Current folder is already the best candidate.");
       } else {
