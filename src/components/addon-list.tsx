@@ -126,9 +126,7 @@ const AddonListItem = memo(function AddonListItem({
               {addon.version || `v${addon.addonVersion ?? "?"}`}
             </span>
             {addon.author && (
-              <span className="text-xs text-muted-foreground/40">
-                &middot; {addon.author}
-              </span>
+              <span className="text-xs text-muted-foreground/40">&middot; {addon.author}</span>
             )}
             <div className="flex-1" />
             {hasUpdate && (
