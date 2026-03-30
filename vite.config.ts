@@ -17,9 +17,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          react: ["react", "react-dom"],
+          react: ["react", "react-dom", "@tanstack/react-virtual"],
           ui: ["@base-ui/react", "lucide-react", "class-variance-authority", "clsx", "tailwind-merge"],
-          virtual: ["@tanstack/react-virtual"],
           tauri: [
             "@tauri-apps/api",
             "@tauri-apps/plugin-dialog",

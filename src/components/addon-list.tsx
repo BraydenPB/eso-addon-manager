@@ -408,6 +408,7 @@ export function AddonList({
             ref={scrollContainerRef}
             role="listbox"
             aria-label="Installed addons"
+            aria-rowcount={addons.length}
             aria-activedescendant={selectedAddon ? `addon-${selectedAddon.folderName}` : undefined}
             tabIndex={0}
             onKeyDown={handleListKeyDown}
@@ -443,6 +444,7 @@ export function AddonList({
                       }}
                       ref={rowVirtualizer.measureElement}
                       data-index={virtualRow.index}
+                      aria-rowindex={virtualRow.index + 1}
                     >
                       <AddonListItem
                         addon={addon}

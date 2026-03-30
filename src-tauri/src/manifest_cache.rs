@@ -102,7 +102,6 @@ fn prune_stale(conn: &Connection, existing_folders: &[String]) {
         "DELETE FROM manifest_cache WHERE folder_name NOT IN (SELECT name FROM _existing_folders)",
         [],
     );
-    let _ = conn.execute("DROP TABLE IF EXISTS _existing_folders", []);
 }
 
 /// Open the cache and prune stale entries. Returns the connection for use

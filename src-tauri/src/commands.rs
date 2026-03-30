@@ -544,10 +544,14 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
         })
         .collect();
 
-    // Store newly parsed manifests in the cache
+    // Store newly parsed manifests in a single transaction for performance.
+    // Without this, each INSERT is its own implicit transaction with a WAL flush.
     if let Some(ref conn) = cache_conn {
-        for (manifest_path, m) in &newly_parsed {
-            manifest_cache::store_parsed(conn, &m.folder_name, manifest_path, m);
+        if let Ok(tx) = conn.unchecked_transaction() {
+            for (manifest_path, m) in &newly_parsed {
+                manifest_cache::store_parsed(&tx, &m.folder_name, manifest_path, m);
+            }
+            let _ = tx.commit();
         }
     }
     addons.extend(newly_parsed.into_iter().map(|(_, m)| m));
