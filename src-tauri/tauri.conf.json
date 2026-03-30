@@ -1,6 +1,6 @@
 {
   "productName": "ESO Addon Manager",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "identifier": "com.esoaddonmanager.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
