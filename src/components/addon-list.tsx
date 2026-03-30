@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type {
   AddonManifest,
   UpdateCheckResult,
@@ -48,6 +49,126 @@ interface AddonListProps {
   onSelectDiscoverResult: (result: EsouiSearchResult | null) => void;
   selectedDiscoverResultId: number | null;
 }
+
+interface AddonListItemProps {
+  addon: AddonManifest;
+  isCurrent: boolean;
+  isSelected: boolean;
+  batchMode: boolean;
+  hasUpdate: boolean;
+  onSelect: (addon: AddonManifest) => void;
+  onToggleSelect: (folderName: string) => void;
+}
+
+const AddonListItem = memo(function AddonListItem({
+  addon,
+  isCurrent,
+  isSelected,
+  batchMode,
+  hasUpdate,
+  onSelect,
+  onToggleSelect,
+}: AddonListItemProps) {
+  return (
+    <div
+      id={`addon-${addon.folderName}`}
+      role="option"
+      aria-selected={batchMode ? isSelected : isCurrent}
+      className={cn(
+        "cursor-pointer border-l-3 border-l-transparent px-4 py-2.5 transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/[0.04] group",
+        addon.missingDependencies.length > 0
+          ? "border-l-red-500 shadow-[inset_4px_0_12px_-4px_rgba(239,68,68,0.1)]"
+          : addon.isLibrary
+            ? "border-l-emerald-400 shadow-[inset_4px_0_12px_-4px_rgba(52,211,153,0.08)]"
+            : hasUpdate
+              ? "border-l-amber-500 shadow-[inset_4px_0_12px_-4px_rgba(245,158,11,0.1)]"
+              : "border-l-transparent",
+        isCurrent &&
+          !batchMode &&
+          "bg-[#c4a44a]/[0.06] border-l-[#c4a44a]! shadow-[inset_4px_0_16px_-4px_rgba(196,164,74,0.15),inset_0_0_0_1px_rgba(196,164,74,0.08)]",
+        isSelected && "bg-[#c4a44a]/[0.04] border-l-[#c4a44a]!"
+      )}
+      onClick={() => {
+        if (batchMode) {
+          onToggleSelect(addon.folderName);
+        } else {
+          onSelect(addon);
+        }
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onToggleSelect(addon.folderName);
+      }}
+    >
+      <div className="flex items-start gap-2">
+        {batchMode && (
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect(addon.folderName)}
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 mt-0.5"
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="truncate text-sm font-medium">
+            {addon.tags.includes("favorite") && (
+              <span className="text-[#c4a44a] mr-1">{"\u2605"}</span>
+            )}
+            {addon.isLibrary && (
+              <span className="text-emerald-400 mr-1 text-[10px] font-medium uppercase tracking-wide">
+                LIB
+              </span>
+            )}
+            {addon.title}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground/50">
+              {addon.version || `v${addon.addonVersion ?? "?"}`}
+            </span>
+            {addon.author && (
+              <span className="text-xs text-muted-foreground/40">
+                &middot; {addon.author}
+              </span>
+            )}
+            <div className="flex-1" />
+            {hasUpdate && (
+              <Badge
+                variant="outline"
+                className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
+              >
+                Update
+              </Badge>
+            )}
+            {addon.missingDependencies.length > 0 && (
+              <Badge
+                variant="outline"
+                className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
+              >
+                {addon.missingDependencies.length} missing
+              </Badge>
+            )}
+            {addon.tags.includes("broken") && (
+              <Badge
+                variant="outline"
+                className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
+              >
+                Broken
+              </Badge>
+            )}
+            {addon.tags.includes("testing") && (
+              <Badge
+                variant="outline"
+                className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
+              >
+                Testing
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const FILTERS: [FilterMode, string][] = [
   ["all", "All"],
@@ -116,7 +237,14 @@ export function AddonList({
 
   const batchMode = selectedFolders.size > 0;
 
-  const listRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: addons.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 52,
+    overscan: 10,
+  });
 
   const handleListKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -130,15 +258,12 @@ export function AddonList({
         e.preventDefault();
         const nextIndex = currentIndex < addons.length - 1 ? currentIndex + 1 : 0;
         onSelect(addons[nextIndex]);
-        // Scroll the focused item into view
-        const items = listRef.current?.querySelectorAll('[role="option"]');
-        items?.[nextIndex]?.scrollIntoView({ block: "nearest" });
+        rowVirtualizer.scrollToIndex(nextIndex, { align: "auto" });
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         const prevIndex = currentIndex > 0 ? currentIndex - 1 : addons.length - 1;
         onSelect(addons[prevIndex]);
-        const items = listRef.current?.querySelectorAll('[role="option"]');
-        items?.[prevIndex]?.scrollIntoView({ block: "nearest" });
+        rowVirtualizer.scrollToIndex(prevIndex, { align: "auto" });
       } else if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         if (currentIndex >= 0) {
@@ -151,16 +276,14 @@ export function AddonList({
       } else if (e.key === "Home") {
         e.preventDefault();
         onSelect(addons[0]);
-        const items = listRef.current?.querySelectorAll('[role="option"]');
-        items?.[0]?.scrollIntoView({ block: "nearest" });
+        rowVirtualizer.scrollToIndex(0, { align: "start" });
       } else if (e.key === "End") {
         e.preventDefault();
         onSelect(addons[addons.length - 1]);
-        const items = listRef.current?.querySelectorAll('[role="option"]');
-        items?.[addons.length - 1]?.scrollIntoView({ block: "nearest" });
+        rowVirtualizer.scrollToIndex(addons.length - 1, { align: "end" });
       }
     },
-    [addons, selectedAddon, onSelect, batchMode, onToggleSelect]
+    [addons, selectedAddon, onSelect, batchMode, onToggleSelect, rowVirtualizer]
   );
 
   return (
@@ -280,7 +403,7 @@ export function AddonList({
             </Select>
           </div>
           <div
-            ref={listRef}
+            ref={scrollContainerRef}
             role="listbox"
             aria-label="Installed addons"
             aria-activedescendant={selectedAddon ? `addon-${selectedAddon.folderName}` : undefined}
@@ -297,110 +420,41 @@ export function AddonList({
                 No addons found
               </div>
             ) : (
-              addons.map((addon) => {
-                const isSelected = selectedFolders.has(addon.folderName);
-                const isCurrent = selectedAddon?.folderName === addon.folderName;
-                return (
-                  <div
-                    key={addon.folderName}
-                    id={`addon-${addon.folderName}`}
-                    role="option"
-                    aria-selected={batchMode ? isSelected : isCurrent}
-                    className={cn(
-                      "cursor-pointer border-l-3 border-l-transparent px-4 py-2.5 transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/[0.04] group",
-                      addon.missingDependencies.length > 0
-                        ? "border-l-red-500 shadow-[inset_4px_0_12px_-4px_rgba(239,68,68,0.1)]"
-                        : addon.isLibrary
-                          ? "border-l-emerald-400 shadow-[inset_4px_0_12px_-4px_rgba(52,211,153,0.08)]"
-                          : updatesMap.has(addon.folderName)
-                            ? "border-l-amber-500 shadow-[inset_4px_0_12px_-4px_rgba(245,158,11,0.1)]"
-                            : "border-l-transparent",
-                      isCurrent &&
-                        !batchMode &&
-                        "bg-[#c4a44a]/[0.06] border-l-[#c4a44a]! shadow-[inset_4px_0_16px_-4px_rgba(196,164,74,0.15),inset_0_0_0_1px_rgba(196,164,74,0.08)]",
-                      isSelected && "bg-[#c4a44a]/[0.04] border-l-[#c4a44a]!"
-                    )}
-                    onClick={() => {
-                      if (batchMode) {
-                        onToggleSelect(addon.folderName);
-                      } else {
-                        onSelect(addon);
-                      }
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      onToggleSelect(addon.folderName);
-                    }}
-                  >
-                    <div className="flex items-start gap-2">
-                      {batchMode && (
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => onToggleSelect(addon.folderName)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="shrink-0 mt-0.5"
-                        />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {addon.tags.includes("favorite") && (
-                            <span className="text-[#c4a44a] mr-1">{"\u2605"}</span>
-                          )}
-                          {addon.isLibrary && (
-                            <span className="text-emerald-400 mr-1 text-[10px] font-medium uppercase tracking-wide">
-                              LIB
-                            </span>
-                          )}
-                          {addon.title}
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1.5">
-                          <span className="text-xs text-muted-foreground/50">
-                            {addon.version || `v${addon.addonVersion ?? "?"}`}
-                          </span>
-                          {addon.author && (
-                            <span className="text-xs text-muted-foreground/40">
-                              &middot; {addon.author}
-                            </span>
-                          )}
-                          <div className="flex-1" />
-                          {updatesMap.has(addon.folderName) && (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
-                            >
-                              Update
-                            </Badge>
-                          )}
-                          {addon.missingDependencies.length > 0 && (
-                            <Badge
-                              variant="outline"
-                              className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
-                            >
-                              {addon.missingDependencies.length} missing
-                            </Badge>
-                          )}
-                          {addon.tags.includes("broken") && (
-                            <Badge
-                              variant="outline"
-                              className="border-red-400/20 bg-red-400/[0.04] text-red-400 text-[10px]"
-                            >
-                              Broken
-                            </Badge>
-                          )}
-                          {addon.tags.includes("testing") && (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-400/20 bg-amber-400/[0.04] text-amber-400 text-[10px]"
-                            >
-                              Testing
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: "100%",
+                  position: "relative",
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const addon = addons[virtualRow.index];
+                  return (
+                    <div
+                      key={addon.folderName}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      ref={rowVirtualizer.measureElement}
+                      data-index={virtualRow.index}
+                    >
+                      <AddonListItem
+                        addon={addon}
+                        isCurrent={selectedAddon?.folderName === addon.folderName}
+                        isSelected={selectedFolders.has(addon.folderName)}
+                        batchMode={batchMode}
+                        hasUpdate={updatesMap.has(addon.folderName)}
+                        onSelect={onSelect}
+                        onToggleSelect={onToggleSelect}
+                      />
                     </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </div>
             )}
           </div>
         </>

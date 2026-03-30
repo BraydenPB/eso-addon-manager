@@ -3,6 +3,7 @@ mod commands;
 mod esoui;
 mod installer;
 mod manifest;
+mod manifest_cache;
 mod metadata;
 
 use serde::Serialize;

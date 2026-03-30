@@ -209,11 +209,21 @@ export async function handleResolveShare(request: Request, env: Env, code: strin
     return json(request, { error: "Share code not found or expired" }, 404);
   }
 
-  // Return the pack data plus sharing metadata
-  return json(request, {
-    pack: record.pack,
-    sharedBy: record.createdByName,
-    sharedAt: record.createdAt,
-    expiresAt: record.expiresAt,
-  });
+  // Return the pack data plus sharing metadata (cache for 5 min — share data is immutable)
+  return new Response(
+    JSON.stringify({
+      pack: record.pack,
+      sharedBy: record.createdByName,
+      sharedAt: record.createdAt,
+      expiresAt: record.expiresAt,
+    }),
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=300",
+        ...corsHeaders(request),
+      },
+    },
+  );
 }

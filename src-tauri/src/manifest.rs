@@ -1,5 +1,5 @@
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
@@ -13,13 +13,13 @@ fn strip_eso_codes(s: &str) -> String {
     re.replace_all(s, "").trim().to_string()
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dependency {
     pub name: String,
     pub min_version: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddonManifest {
     pub folder_name: String,

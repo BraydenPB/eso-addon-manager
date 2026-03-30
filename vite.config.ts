@@ -13,6 +13,24 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          ui: ["@base-ui/react", "lucide-react", "class-variance-authority", "clsx", "tailwind-merge"],
+          tauri: [
+            "@tauri-apps/api",
+            "@tauri-apps/plugin-dialog",
+            "@tauri-apps/plugin-opener",
+            "@tauri-apps/plugin-process",
+            "@tauri-apps/plugin-store",
+            "@tauri-apps/plugin-updater",
+          ],
+        },
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

@@ -1,10 +1,12 @@
+import { lazy, Suspense } from "react";
 import type { AddonManifest, AuthUser } from "@/types";
-import { ApiCompat } from "./api-compat";
-import { Backups } from "./backups";
-import { Characters } from "./characters";
-import { Packs } from "./packs";
-import { Profiles } from "./profiles";
-import { Settings } from "./settings";
+
+const Packs = lazy(() => import("./packs").then((m) => ({ default: m.Packs })));
+const Profiles = lazy(() => import("./profiles").then((m) => ({ default: m.Profiles })));
+const Backups = lazy(() => import("./backups").then((m) => ({ default: m.Backups })));
+const ApiCompat = lazy(() => import("./api-compat").then((m) => ({ default: m.ApiCompat })));
+const Characters = lazy(() => import("./characters").then((m) => ({ default: m.Characters })));
+const Settings = lazy(() => import("./settings").then((m) => ({ default: m.Settings })));
 
 type ActiveDialog =
   | "settings"
@@ -44,8 +46,10 @@ export function AppDialogs({
   onRefresh,
   onShowDialog,
 }: AppDialogsProps) {
+  if (!activeDialog) return null;
+
   return (
-    <>
+    <Suspense fallback={null}>
       {activeDialog === "packs" && (
         <Packs
           addonsPath={addonsPath}
@@ -85,6 +89,6 @@ export function AppDialogs({
           onCheckForAppUpdate={onCheckForAppUpdate}
         />
       )}
-    </>
+    </Suspense>
   );
 }
