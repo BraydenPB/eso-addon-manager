@@ -21,6 +21,9 @@ fn open_cache(addons_dir: &Path) -> Result<Connection, rusqlite::Error> {
 }
 
 /// Get the file mtime as (secs, nanos) since UNIX epoch.
+/// Note: on filesystems without sub-second precision (FAT32, some network
+/// shares), `nanos` will always be 0. The cache still works — it just keys
+/// on seconds only, which is sufficient for detecting file changes.
 fn file_mtime(path: &Path) -> Option<(i64, u32)> {
     let metadata = std::fs::metadata(path).ok()?;
     let mtime = metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;

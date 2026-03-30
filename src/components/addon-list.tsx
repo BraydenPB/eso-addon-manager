@@ -242,6 +242,8 @@ export function AddonList({
   const rowVirtualizer = useVirtualizer({
     count: addons.length,
     getScrollElement: () => scrollContainerRef.current,
+    // 52px = 48px row content + 4px gap. Rows are single-line (title truncated
+    // via CSS), so height is stable. measureElement corrects any deviation.
     estimateSize: () => 52,
     overscan: 5,
   });

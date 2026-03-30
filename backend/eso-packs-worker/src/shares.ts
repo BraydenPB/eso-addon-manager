@@ -16,13 +16,19 @@ const ESO_LOGS_API = "https://www.esologs.com/api/v2/user";
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-function json(request: Request, data: unknown, status = 200, cacheMaxAge = 0): Response {
+function json(
+  request: Request,
+  data: unknown,
+  status = 200,
+  cacheMaxAge = 0,
+  cacheScope: "public" | "private" = "private",
+): Response {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...corsHeaders(request),
   };
   if (cacheMaxAge > 0) {
-    headers["Cache-Control"] = `public, max-age=${cacheMaxAge}`;
+    headers["Cache-Control"] = `${cacheScope}, max-age=${cacheMaxAge}`;
   }
   return new Response(JSON.stringify(data), { status, headers });
 }

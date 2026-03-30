@@ -5,13 +5,19 @@ import { validatePack } from "./validate";
 import { SEED_PACKS } from "./seed";
 import { handleCreateShare, handleResolveShare } from "./shares";
 
-function json(request: Request, data: unknown, status = 200, cacheMaxAge = 0): Response {
+function json(
+  request: Request,
+  data: unknown,
+  status = 200,
+  cacheMaxAge = 0,
+  cacheScope: "public" | "private" = "public",
+): Response {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...corsHeaders(request),
   };
   if (cacheMaxAge > 0) {
-    headers["Cache-Control"] = `public, max-age=${cacheMaxAge}`;
+    headers["Cache-Control"] = `${cacheScope}, max-age=${cacheMaxAge}`;
   }
   return new Response(JSON.stringify(data), { status, headers });
 }
@@ -85,11 +91,11 @@ async function handleListPacks(request: Request, env: Env, url: URL): Promise<Re
 
   const response = json(request, { items }, 200, 30);
 
-  // Cache unfiltered responses at the CDN edge for 30s
-  if (!hasFilters) {
-    if (request.method === "GET") {
-      cache.put(request, response.clone()).catch(console.error);
-    }
+  // Fire-and-forget: cache unfiltered responses at the CDN edge for 30s.
+  // If the put fails (quota, transient error) the response still reaches the
+  // caller — subsequent requests will just miss the cache and re-fetch from KV.
+  if (!hasFilters && request.method === "GET") {
+    cache.put(request, response.clone()).catch(console.error);
   }
 
   return response;
@@ -101,7 +107,9 @@ async function handleGetPack(request: Request, env: Env, id: string): Promise<Re
   if (!pack) {
     return notFound(request, `Pack "${id}" not found`);
   }
-  return json(request, pack, 200, 300);
+  // Per-resource response: use private to prevent shared caches from serving
+  // stale data across different clients after a mutation.
+  return json(request, pack, 200, 300, "private");
 }
 
 // ── POST /packs — create a new pack ────────────────────────────────
