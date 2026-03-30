@@ -39,6 +39,7 @@ export function Settings({
   onCheckForAppUpdate,
 }: SettingsProps) {
   const [path, setPath] = useState(addonsPath);
+  const [logsPath, setLogsPath] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -50,6 +51,20 @@ export function Settings({
 
   useEffect(() => {
     void getSetting<boolean>("autoUpdate", false).then(setAutoUpdate);
+    void getSetting<string>("logsPath", "").then((saved) => {
+      if (saved) {
+        setLogsPath(saved);
+      } else {
+        // Default to detected path
+        void invokeResult<{ path: string | null; fromAddonPath: boolean; message: string }>(
+          "detect_log_path"
+        ).then((result) => {
+          if (result.ok && result.data.path) {
+            setLogsPath(result.data.path);
+          }
+        });
+      }
+    });
     void invokeResult<boolean>("detect_minion").then((result) => {
       if (result.ok) {
         setMinionDetected(result.data);
@@ -61,7 +76,25 @@ export function Settings({
     if (path.trim()) {
       onPathChange(path.trim());
     }
+    if (logsPath.trim()) {
+      void setSetting("logsPath", logsPath.trim());
+    }
     onClose();
+  };
+
+  const handleBrowseLogsFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        title: "Select ESO Logs Folder",
+        defaultPath: logsPath || undefined,
+      });
+      if (selected) {
+        setLogsPath(selected);
+      }
+    } catch (e) {
+      toast.error(`Failed to open folder picker: ${e}`);
+    }
   };
 
   const handleBrowse = async () => {
@@ -165,6 +198,26 @@ export function Settings({
               </Button>
               <Button variant="outline" size="sm" disabled={redetecting} onClick={handleRedetect}>
                 {redetecting ? "Detecting..." : "Re-detect"}
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="logs-path" className="mb-1 block text-sm text-muted-foreground">
+              Log Folder
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="logs-path"
+                value={logsPath}
+                onChange={(e) => setLogsPath(e.target.value)}
+                placeholder="C:\Users\...\Elder Scrolls Online\live\Logs"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSave();
+                }}
+              />
+              <Button variant="outline" size="sm" onClick={() => void handleBrowseLogsFolder()}>
+                Browse
               </Button>
             </div>
           </div>

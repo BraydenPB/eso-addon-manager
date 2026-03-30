@@ -85,6 +85,7 @@ function App() {
   const [batchRemoving, setBatchRemoving] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [setupDetection, setSetupDetection] = useState<AddonsDetectionResult | null>(null);
+  const [logsCharacterFilter, setLogsCharacterFilter] = useState<string | null>(null);
 
   const {
     state: appUpdateState,
@@ -423,6 +424,13 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [scanAndCheck]);
 
+  // Clear character filter when navigating away from logs
+  useEffect(() => {
+    if (viewMode !== "logs") {
+      setLogsCharacterFilter(null);
+    }
+  }, [viewMode]);
+
   useEffect(() => {
     if (!activeTagFilter) return;
     const tagStillExists = addons.some((addon) => addon.tags.includes(activeTagFilter));
@@ -670,6 +678,18 @@ function App() {
 
   const batchMode = selectedFolders.size > 0;
 
+  const handleViewLogsForCharacter = useCallback((characterName: string) => {
+    setLogsCharacterFilter(characterName);
+    setViewMode("logs");
+  }, []);
+
+  // TODO: Implement date-based addon filtering on the Addons page.
+  // Currently navigates to the installed view with `?date=<timestamp>` semantics
+  // but the actual filter is not yet applied to the addon list.
+  const handleViewAddonsAtDate = useCallback((_timestamp: number) => {
+    setViewMode("installed");
+  }, []);
+
   const handleOpenDialog = useCallback((dialog: Exclude<ActiveDialog, null>) => {
     setActiveDialog(dialog);
   }, []);
@@ -774,7 +794,11 @@ function App() {
             onInstalled={handleRefresh}
           />
         ) : viewMode === "logs" ? (
-          <LogsPage />
+          <LogsWorkspace
+            addonsPath={addonsPath}
+            onViewAddonsAtDate={handleViewAddonsAtDate}
+            characterFilter={logsCharacterFilter}
+          />
         ) : null}
       </div>
 
@@ -791,6 +815,7 @@ function App() {
         onPathChange={(path) => void handlePathChange(path)}
         onRefresh={handleRefresh}
         onShowDialog={handleOpenDialog}
+        onViewLogs={handleViewLogsForCharacter}
       />
     </div>
   );
