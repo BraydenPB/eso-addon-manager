@@ -1,9 +1,11 @@
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
 use std::path::Path;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use tauri::Emitter;
 
 use super::parser;
 use super::types::CombatEvent;
@@ -143,6 +145,134 @@ pub fn watch_log_file(
                 }
                 Err(e) => {
                     eprintln!("[log_watcher] Failed to read new data: {}", e);
+                }
+            }
+        }
+    });
+
+    Ok(LogWatchHandle {
+        stop_flag,
+        _thread: Some(thread),
+    })
+}
+
+// ── Line-level watcher that emits Tauri events ────────────────────────
+
+/// Payload emitted on the "log-updated" Tauri event.
+#[derive(Clone, Serialize)]
+pub struct LogUpdatedPayload {
+    pub path: String,
+    pub new_lines: Vec<String>,
+}
+
+/// Start watching a log file and emit a "log-updated" Tauri event whenever
+/// new lines are appended. Returns a `LogWatchHandle` to stop watching.
+pub fn watch_log_lines(
+    file_path: &str,
+    app_handle: tauri::AppHandle,
+) -> Result<LogWatchHandle, String> {
+    let path = Path::new(file_path).to_path_buf();
+    if !path.is_file() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+
+    let initial_size = std::fs::metadata(&path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let stop_flag = Arc::new(Mutex::new(false));
+    let stop_flag_clone = Arc::clone(&stop_flag);
+    let path_string = file_path.to_string();
+    let path_clone = path.clone();
+
+    let thread = thread::spawn(move || {
+        let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+
+        let mut watcher = match RecommendedWatcher::new(
+            move |res| {
+                let _ = tx.send(res);
+            },
+            Config::default().with_poll_interval(Duration::from_secs(1)),
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[log_line_watcher] Failed to create watcher: {}", e);
+                return;
+            }
+        };
+
+        if let Some(parent) = path_clone.parent() {
+            if let Err(e) = watcher.watch(parent, RecursiveMode::NonRecursive) {
+                eprintln!("[log_line_watcher] Failed to watch directory: {}", e);
+                return;
+            }
+        }
+
+        let mut last_offset = initial_size;
+        let mut last_check = Instant::now();
+
+        loop {
+            if let Ok(flag) = stop_flag_clone.lock() {
+                if *flag {
+                    break;
+                }
+            }
+
+            match rx.recv_timeout(Duration::from_millis(500)) {
+                Ok(Ok(event)) => {
+                    if !matches!(event.kind, EventKind::Modify(_)) {
+                        continue;
+                    }
+                    let is_our_file = event.paths.iter().any(|p| p == &path_clone);
+                    if !is_our_file {
+                        continue;
+                    }
+                }
+                Ok(Err(e)) => {
+                    eprintln!("[log_line_watcher] Watch error: {}", e);
+                    continue;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if last_check.elapsed() < Duration::from_secs(2) {
+                        continue;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+
+            last_check = Instant::now();
+
+            let current_size = match std::fs::metadata(&path_clone) {
+                Ok(m) => m.len(),
+                Err(_) => continue,
+            };
+
+            if current_size <= last_offset {
+                if current_size < last_offset {
+                    last_offset = 0;
+                }
+                continue;
+            }
+
+            match read_range(&path_clone, last_offset, current_size) {
+                Ok(new_text) => {
+                    let lines: Vec<String> = new_text
+                        .lines()
+                        .filter(|l| !l.is_empty())
+                        .map(|l| l.to_string())
+                        .collect();
+
+                    if !lines.is_empty() {
+                        let payload = LogUpdatedPayload {
+                            path: path_string.clone(),
+                            new_lines: lines,
+                        };
+                        let _ = app_handle.emit("log-updated", payload);
+                    }
+                    last_offset = current_size;
+                }
+                Err(e) => {
+                    eprintln!("[log_line_watcher] Failed to read new data: {}", e);
                 }
             }
         }
