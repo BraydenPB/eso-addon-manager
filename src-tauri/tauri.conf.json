@@ -21,8 +21,15 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' https://cdn-eso.mmoui.com https://*.esoui.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'",
-      "devCsp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' https://cdn-eso.mmoui.com https://*.esoui.com; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*"
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' https://cdn-eso.mmoui.com https://*.esoui.com",
+        "font-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost"
+      },
+      "devCsp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' https://cdn-eso.mmoui.com https://*.esoui.com; font-src 'self'; connect-src ipc: http://ipc.localhost 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*"
     }
   },
   "plugins": {
