@@ -8,6 +8,7 @@ import { AppBackground } from "./components/app-background";
 import { AppDialogs } from "./components/app-dialogs";
 import { AppHeader } from "./components/app-header";
 import { DiscoverDetail } from "./components/discover-detail";
+import { LogsWorkspace } from "./components/logs/logs-workspace";
 import { SetupWizard } from "./components/setup-wizard";
 import { StatusBanners } from "./components/status-banners";
 import { UpdateBanner } from "./components/update-banner";
@@ -405,8 +406,13 @@ function App() {
         setDiscoverTab("search");
       }
 
+      if (event.ctrlKey && event.key === "l") {
+        event.preventDefault();
+        setViewMode("logs");
+      }
+
       if (event.key === "Escape") {
-        if (viewModeRef.current === "discover") {
+        if (viewModeRef.current === "discover" || viewModeRef.current === "logs") {
           setViewMode("installed");
         }
         setSelectedFolders(new Set());
@@ -760,14 +766,16 @@ function App() {
             onAddonUpdated={handleAddonUpdated}
             onTagsChange={handleTagsChange}
           />
-        ) : (
+        ) : viewMode === "discover" ? (
           <DiscoverDetail
             key={selectedDiscoverResult?.id ?? "none"}
             result={selectedDiscoverResult}
             addonsPath={addonsPath}
             onInstalled={handleRefresh}
           />
-        )}
+        ) : viewMode === "logs" ? (
+          <LogsWorkspace addonsPath={addonsPath} />
+        ) : null}
       </div>
 
       <AppDialogs

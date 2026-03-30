@@ -2,6 +2,7 @@ mod auth;
 mod commands;
 mod esoui;
 mod installer;
+pub mod logs;
 mod manifest;
 mod metadata;
 
@@ -107,6 +108,10 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AllowedAddonsPath(Mutex::new(None)))
         .manage(auth::AuthState(Mutex::new(None)))
+        .manage(logs::commands::ActiveLogWatcher(Mutex::new(None)))
+        .manage(logs::commands::LiveLogBuffer(Mutex::new(
+            logs::commands::LiveBufferInner::default(),
+        )))
         .manage(PendingDeepLink(Mutex::new(
             PendingDeepLinkPayload::default(),
         )))
@@ -258,6 +263,13 @@ pub fn run() {
             commands::resolve_share_code,
             commands::export_pack_file,
             commands::import_pack_file,
+            logs::commands::detect_log_path,
+            logs::commands::list_logs,
+            logs::commands::analyze_log,
+            logs::commands::get_encounter_detail,
+            logs::commands::watch_log_start,
+            logs::commands::watch_log_stop,
+            logs::commands::get_live_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

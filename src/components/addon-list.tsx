@@ -175,6 +175,9 @@ export function AddonList({
             <TabsTrigger value="discover" className="flex-1">
               Discover
             </TabsTrigger>
+            <TabsTrigger value="logs" className="flex-1">
+              Logs
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -404,7 +407,7 @@ export function AddonList({
             )}
           </div>
         </>
-      ) : (
+      ) : viewMode === "discover" ? (
         <DiscoverPanel
           activeTab={discoverTab}
           onTabChange={onDiscoverTabChange}
@@ -413,7 +416,7 @@ export function AddonList({
           onSelectResult={onSelectDiscoverResult}
           selectedResultId={selectedDiscoverResultId}
         />
-      )}
+      ) : null}
     </div>
   );
 }
