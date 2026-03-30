@@ -526,7 +526,7 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
         };
         if let Some(ref conn) = cache_conn {
             if let Some(cached) =
-                manifest_cache::parse_manifest_cached(conn, addons_dir, folder_name, &manifest_path)
+                manifest_cache::parse_manifest_cached(conn, folder_name, &manifest_path)
             {
                 addons.push(cached);
                 continue;
@@ -601,7 +601,6 @@ fn scan_installed_addons_blocking(addons_dir: &Path) -> Result<Vec<AddonManifest
     }
 
     // Check for missing dependencies and enrich with ESOUI ID
-    let mut addons = addons;
     for addon in &mut addons {
         addon.missing_dependencies = addon
             .depends_on

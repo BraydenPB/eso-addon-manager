@@ -30,7 +30,6 @@ fn file_mtime(path: &Path) -> Option<(i64, u32)> {
 /// Try to load a cached manifest if the mtime matches. Returns None on miss.
 pub fn parse_manifest_cached(
     conn: &Connection,
-    _addons_dir: &Path,
     folder_name: &str,
     manifest_path: &Path,
 ) -> Option<AddonManifest> {
@@ -69,23 +68,38 @@ pub fn store_parsed(
 }
 
 /// Remove stale entries from the cache for folders that no longer exist.
-/// Uses a direct parameterized IN clause — efficient for typical addon
-/// counts (under ~1000 folders).
+/// Batches deletes in groups of 500 to stay under SQLite's 999-parameter limit.
 fn prune_stale(conn: &Connection, existing_folders: &[String]) {
     if existing_folders.is_empty() {
         let _ = conn.execute("DELETE FROM manifest_cache", []);
         return;
     }
-    let placeholders: Vec<&str> = existing_folders.iter().map(|_| "?").collect();
-    let sql = format!(
-        "DELETE FROM manifest_cache WHERE folder_name NOT IN ({})",
-        placeholders.join(",")
+
+    // Use a temp table to hold existing folder names, then delete rows not in it.
+    // This avoids the SQLITE_LIMIT_VARIABLE_NUMBER (999) cap for large addon lists.
+    let _ = conn.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS _existing_folders (name TEXT PRIMARY KEY);
+         DELETE FROM _existing_folders;",
     );
-    let params: Vec<&dyn rusqlite::types::ToSql> = existing_folders
-        .iter()
-        .map(|s| s as &dyn rusqlite::types::ToSql)
-        .collect();
-    let _ = conn.execute(&sql, params.as_slice());
+
+    for chunk in existing_folders.chunks(500) {
+        let placeholders: Vec<&str> = chunk.iter().map(|_| "(?)").collect();
+        let sql = format!(
+            "INSERT INTO _existing_folders (name) VALUES {}",
+            placeholders.join(",")
+        );
+        let params: Vec<&dyn rusqlite::types::ToSql> = chunk
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+        let _ = conn.execute(&sql, params.as_slice());
+    }
+
+    let _ = conn.execute(
+        "DELETE FROM manifest_cache WHERE folder_name NOT IN (SELECT name FROM _existing_folders)",
+        [],
+    );
+    let _ = conn.execute("DROP TABLE IF EXISTS _existing_folders", []);
 }
 
 /// Open the cache and prune stale entries. Returns the connection for use

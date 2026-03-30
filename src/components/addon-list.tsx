@@ -243,7 +243,7 @@ export function AddonList({
     count: addons.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => 52,
-    overscan: 15,
+    overscan: 5,
   });
 
   const handleListKeyDown = useCallback(

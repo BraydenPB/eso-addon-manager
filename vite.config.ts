@@ -19,6 +19,7 @@ export default defineConfig({
         manualChunks: {
           react: ["react", "react-dom"],
           ui: ["@base-ui/react", "lucide-react", "class-variance-authority", "clsx", "tailwind-merge"],
+          virtual: ["@tanstack/react-virtual"],
           tauri: [
             "@tauri-apps/api",
             "@tauri-apps/plugin-dialog",

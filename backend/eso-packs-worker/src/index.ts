@@ -42,8 +42,8 @@ function requireAuth(request: Request, env: Env): boolean {
  * purge those keys as well.
  */
 async function invalidatePackListCache(url: URL): Promise<void> {
-  const cacheKey = new URL("/packs", url.origin).toString();
-  await caches.default.delete(cacheKey);
+  const cacheKey = new URL("/packs", url.origin);
+  await caches.default.delete(new Request(cacheKey));
 }
 
 // ── GET /packs ─────────────────────────────────────────────────────
@@ -87,7 +87,9 @@ async function handleListPacks(request: Request, env: Env, url: URL): Promise<Re
 
   // Cache unfiltered responses at the CDN edge for 30s
   if (!hasFilters) {
-    request.method === "GET" && void cache.put(request, response.clone());
+    if (request.method === "GET") {
+      cache.put(request, response.clone()).catch(console.error);
+    }
   }
 
   return response;

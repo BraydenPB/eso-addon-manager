@@ -41,5 +41,5 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 [profile.release]
 lto = true
 codegen-units = 1
-strip = true
+strip = true # Only effective on Linux/macOS (no-op on Windows)
 panic = "abort"
