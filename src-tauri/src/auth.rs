@@ -10,8 +10,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// The website URL that handles the OAuth flow and passes tokens back.
 const APP_AUTH_URL: &str = "https://eso-toolkit.github.io/dev-previews/pr-925/app-auth";
 
-/// Allowed CORS origin for the OAuth callback server.
-const ALLOWED_ORIGIN: &str = "https://eso-toolkit.github.io";
+/// Derive the allowed CORS origin from APP_AUTH_URL so they stay in sync.
+fn allowed_origin() -> String {
+    let parsed = url::Url::parse(APP_AUTH_URL).expect("APP_AUTH_URL is a valid URL");
+    parsed.origin().ascii_serialization()
+}
 
 const USER_API: &str = "https://www.esologs.com/api/v2/user";
 
@@ -162,7 +165,7 @@ pub fn run_oauth_flow() -> Result<CallbackTokens, String> {
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n{}",
                         html.len(),
-                        ALLOWED_ORIGIN,
+                        allowed_origin(),
                         html
                     );
                     let _ = stream.write_all(response.as_bytes());
@@ -172,7 +175,7 @@ pub fn run_oauth_flow() -> Result<CallbackTokens, String> {
                     // Handle CORS preflight
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: {}\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                        ALLOWED_ORIGIN
+                        allowed_origin()
                     );
                     let _ = stream.write_all(response.as_bytes());
                 } else {

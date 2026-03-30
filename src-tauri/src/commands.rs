@@ -2917,6 +2917,12 @@ pub fn export_pack_file(pack: EsoPackFile, path: String) -> Result<(), String> {
         .ok_or_else(|| "Invalid file path: no file name.".to_string())?;
     let safe_path = canonical_parent.join(file_name);
 
+    // Only allow .esopack extension
+    match safe_path.extension().and_then(|e| e.to_str()) {
+        Some("esopack") => {}
+        _ => return Err("File must have an .esopack extension.".to_string()),
+    }
+
     let json = serde_json::to_string_pretty(&pack)
         .map_err(|e| format!("Failed to serialize pack: {}", e))?;
 
