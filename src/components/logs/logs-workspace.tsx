@@ -26,6 +26,7 @@ export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter 
   const [selectedEncounter, setSelectedEncounter] = useState<Encounter | null>(null);
   const [view, setView] = useState<LogsView>("home");
   const [loading, setLoading] = useState(true);
+  const [loadingFiles, setLoadingFiles] = useState(false);
 
   // Detect log path on mount
   useEffect(() => {
@@ -50,6 +51,8 @@ export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter 
           setLogsPath(result.data.path);
           void setSetting("logsPath", result.data.path);
         }
+      } else {
+        toastTauriError("Failed to detect log path", result.error);
       }
       setLoading(false);
     }
@@ -65,12 +68,16 @@ export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter 
     if (!logsPath) return;
 
     async function loadFiles() {
+      setLoadingFiles(true);
       const result = await invokeResult<LogFileInfo[]>("list_logs", {
         logsPath,
       });
       if (result.ok) {
         setLogFiles(result.data);
+      } else {
+        toastTauriError("Failed to load log files", result.error);
       }
+      setLoadingFiles(false);
     }
 
     void loadFiles();
@@ -85,6 +92,8 @@ export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter 
     });
     if (result.ok) {
       setLogFiles(result.data);
+    } else {
+      toastTauriError("Failed to load log files", result.error);
     }
   }, []);
 
@@ -117,12 +126,16 @@ export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter 
 
   const handleRefreshFiles = useCallback(async () => {
     if (!logsPath) return;
+    setLoadingFiles(true);
     const result = await invokeResult<LogFileInfo[]>("list_logs", {
       logsPath,
     });
     if (result.ok) {
       setLogFiles(result.data);
+    } else {
+      toastTauriError("Failed to refresh log files", result.error);
     }
+    setLoadingFiles(false);
   }, [logsPath]);
 
   if (loading) {
@@ -160,6 +173,7 @@ export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter 
           logsPath={logsPath}
           detection={detection}
           logFiles={logFiles}
+          loadingFiles={loadingFiles}
           onSetLogsPath={handleSetLogsPath}
           onOpenLog={handleOpenLog}
           onRefresh={handleRefreshFiles}
