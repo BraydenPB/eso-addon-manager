@@ -380,6 +380,7 @@ function PopularContent({
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const loadPopular = useCallback(async (p: number, sort: PopularSort) => {
     setLoading(true);
@@ -442,7 +443,7 @@ function PopularContent({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={listRef} className="flex-1 overflow-y-auto">
         {loading ? (
           <LoadingSpinner message="Loading popular addons..." />
         ) : results.length === 0 ? (
@@ -491,11 +492,13 @@ function PopularContent({
             const p = page - 1;
             setPage(p);
             loadPopular(p, sortBy);
+            listRef.current?.scrollTo(0, 0);
           }}
           onNext={() => {
             const p = page + 1;
             setPage(p);
             loadPopular(p, sortBy);
+            listRef.current?.scrollTo(0, 0);
           }}
         />
       )}
@@ -524,6 +527,7 @@ function CategoryContent({
   const [page, setPage] = useState(0);
   const [filterText, setFilterText] = useState("");
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void invokeResult<EsouiCategory[]>("get_esoui_categories").then((result) => {
@@ -535,7 +539,7 @@ function CategoryContent({
     });
   }, []);
 
-  const loadCategory = async (catId: number, p: number, sort: string) => {
+  const loadCategory = useCallback(async (catId: number, p: number, sort: string) => {
     setLoading(true);
     try {
       const r = await invokeOrThrow<EsouiSearchResult[]>("browse_esoui_category", {
@@ -549,7 +553,7 @@ function CategoryContent({
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleCategoryChange = (catId: string | null) => {
     if (!catId) return;
@@ -638,7 +642,7 @@ function CategoryContent({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={listRef} className="flex-1 overflow-y-auto">
         {loading ? (
           <LoadingSpinner message="Loading..." />
         ) : filteredResults.length === 0 && filterText ? (
@@ -681,11 +685,13 @@ function CategoryContent({
             const p = page - 1;
             setPage(p);
             if (selectedCategory) loadCategory(selectedCategory, p, sortBy);
+            listRef.current?.scrollTo(0, 0);
           }}
           onNext={() => {
             const p = page + 1;
             setPage(p);
             if (selectedCategory) loadCategory(selectedCategory, p, sortBy);
+            listRef.current?.scrollTo(0, 0);
           }}
         />
       )}
@@ -838,9 +844,7 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
           </div>
           {result.installedDeps.length > 0 && (
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3 text-sm text-emerald-400 flex items-center gap-2">
-              <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
+              <Check className="size-4 shrink-0" />
               Deps: {result.installedDeps.join(", ")}
             </div>
           )}

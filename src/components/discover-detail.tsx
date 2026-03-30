@@ -221,7 +221,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
             )}
           </Button>
           <a
-            href={`https://www.esoui.com/downloads/info${detail.id}`}
+            href={`https://www.esoui.com/downloads/info${detail.id}.html`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors flex items-center gap-1"
