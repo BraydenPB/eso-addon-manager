@@ -263,6 +263,10 @@ async function handleVotePack(
   const existingVote = await getVote(env, id, userId);
   let voted: boolean;
 
+  // NOTE: KV does not support transactions, so concurrent votes can still
+  // cause voteCount drift. The re-read below narrows the race window but
+  // cannot eliminate it. A periodic reconciliation job (count vote:* keys
+  // vs stored voteCount) is recommended as a follow-up.
   if (existingVote) {
     // Unvote — delete vote record first, then re-read pack to reduce race window
     await deleteVote(env, id, userId);

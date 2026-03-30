@@ -12,13 +12,22 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const APP_AUTH_URL: &str = "https://eso-toolkit.github.io/dev-previews/pr-925/app-auth";
 
 /// Derive the allowed CORS origin from APP_AUTH_URL so they stay in sync.
-fn allowed_origin() -> String {
-    let parsed = url::Url::parse(APP_AUTH_URL).expect("APP_AUTH_URL is a valid URL");
-    parsed.origin().ascii_serialization()
+/// Validated once on first call; panics at startup (not mid-request) if the
+/// constant is somehow malformed.
+fn allowed_origin() -> &'static str {
+    use std::sync::OnceLock;
+    static ORIGIN: OnceLock<String> = OnceLock::new();
+    ORIGIN.get_or_init(|| {
+        let parsed = url::Url::parse(APP_AUTH_URL)
+            .expect("APP_AUTH_URL must be a valid URL — check the constant");
+        parsed.origin().ascii_serialization()
+    })
 }
 
 /// OAuth client ID — injected at build time via `ESOLOGS_CLIENT_ID` env var.
 /// For local development, set this in your environment or `.cargo/config.toml`.
+// This is evaluated at compile time: if the env var is missing the build
+// fails with the message below (it is a compile error, not a runtime panic).
 const CLIENT_ID: &str = match option_env!("ESOLOGS_CLIENT_ID") {
     Some(id) => id,
     None => panic!("ESOLOGS_CLIENT_ID environment variable must be set at build time"),
