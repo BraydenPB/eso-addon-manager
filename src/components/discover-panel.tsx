@@ -27,9 +27,12 @@ import {
   FolderOpen,
   Link,
   Flame,
-  ArrowUp,
-  ArrowDown,
+  ChevronLeft,
+  ChevronRight,
+  Check,
 } from "lucide-react";
+
+const PAGE_SIZE = 25;
 
 interface DiscoverPanelProps {
   activeTab: DiscoverTab;
@@ -147,11 +150,11 @@ function DiscoverResultRow({
   );
 }
 
-const DISCOVER_TABS: [DiscoverTab, string, React.ReactNode][] = [
-  ["search", "Search", <Search key="s" className="size-3" />],
-  ["popular", "Popular", <Flame key="p" className="size-3" />],
-  ["categories", "Categories", <FolderOpen key="c" className="size-3" />],
-  ["url", "URL / ID", <Link key="u" className="size-3" />],
+const DISCOVER_TABS: [DiscoverTab, string, React.FC<{ className?: string }>][] = [
+  ["search", "Search", Search],
+  ["popular", "Popular", Flame],
+  ["categories", "Categories", FolderOpen],
+  ["url", "URL / ID", Link],
 ];
 
 export function DiscoverPanel({
@@ -170,7 +173,7 @@ export function DiscoverPanel({
         role="tablist"
         aria-label="Discover mode"
       >
-        {DISCOVER_TABS.map(([tab, label, icon]) => (
+        {DISCOVER_TABS.map(([tab, label, Icon]) => (
           <button
             key={tab}
             role="tab"
@@ -183,7 +186,7 @@ export function DiscoverPanel({
             )}
             onClick={() => onTabChange(tab)}
           >
-            {icon}
+            <Icon className="size-3" />
             {label}
           </button>
         ))}
@@ -317,10 +320,8 @@ function SearchContent({
           <span className="text-[11px] font-heading font-bold uppercase tracking-[0.05em] text-muted-foreground/50">
             {results.length} result{results.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[11px] text-muted-foreground/30 flex items-center gap-1">
-            <ArrowUp className="size-3" />
-            <ArrowDown className="size-3" />
-            to navigate
+          <span className="text-[11px] text-muted-foreground/30">
+            &uarr;&darr; to navigate
           </span>
         </div>
       )}
@@ -378,7 +379,6 @@ function PopularContent({
   const [results, setResults] = useState<EsouiSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
-  const [hasLoaded, setHasLoaded] = useState(false);
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
 
   const loadPopular = useCallback(async (p: number, sort: PopularSort) => {
@@ -391,7 +391,6 @@ function PopularContent({
         sortBy: sort,
       });
       setResults(r);
-      setHasLoaded(true);
     } catch (e) {
       toast.error(getTauriErrorMessage(e));
     } finally {
@@ -399,11 +398,10 @@ function PopularContent({
     }
   }, []);
 
+  // Load on mount
   useEffect(() => {
-    if (!hasLoaded) {
-      loadPopular(0, sortBy);
-    }
-  }, [hasLoaded, loadPopular, sortBy]);
+    loadPopular(0, "downloads");
+  }, [loadPopular]);
 
   const handleSortChange = (sort: string | null) => {
     if (!sort) return;
@@ -461,12 +459,12 @@ function PopularContent({
                 <span
                   className={cn(
                     "text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full",
-                    idx + page * results.length < 3
+                    idx + page * PAGE_SIZE < 3
                       ? "text-[#c4a44a] bg-[#c4a44a]/10"
                       : "text-muted-foreground/30"
                   )}
                 >
-                  {idx + 1 + page * results.length}
+                  {idx + 1 + page * PAGE_SIZE}
                 </span>
               </div>
               <div className="pl-3">
@@ -488,7 +486,7 @@ function PopularContent({
         <PaginationBar
           page={page}
           loading={loading}
-          hasResults={results.length > 0}
+          isLastPage={results.length < PAGE_SIZE}
           onPrev={() => {
             const p = page - 1;
             setPage(p);
@@ -566,6 +564,7 @@ function CategoryContent({
   const handleSortChange = (sort: string | null) => {
     if (!sort) return;
     setSortBy(sort);
+    setFilterText("");
     if (selectedCategory) {
       setPage(0);
       loadCategory(selectedCategory, 0, sort);
@@ -677,7 +676,7 @@ function CategoryContent({
         <PaginationBar
           page={page}
           loading={loading}
-          hasResults={results.length > 0}
+          isLastPage={results.length < PAGE_SIZE}
           onPrev={() => {
             const p = page - 1;
             setPage(p);
@@ -834,9 +833,7 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
       {state === "installed" && result && (
         <div className="space-y-2">
           <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3 text-sm text-emerald-400 flex items-center gap-2">
-            <svg className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
+            <Check className="size-4 shrink-0" />
             Installed: {result.installedFolders.join(", ")}
           </div>
           {result.installedDeps.length > 0 && (
@@ -880,7 +877,7 @@ function EmptyState({
 }: {
   icon: React.ReactNode;
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 gap-3 px-6">
@@ -898,28 +895,28 @@ function EmptyState({
 function PaginationBar({
   page,
   loading,
-  hasResults,
+  isLastPage,
   onPrev,
   onNext,
 }: {
   page: number;
   loading: boolean;
-  hasResults: boolean;
+  isLastPage: boolean;
   onPrev: () => void;
   onNext: () => void;
 }) {
   return (
     <div className="flex items-center justify-between border-t border-white/[0.06] px-3 py-1.5">
       <Button variant="ghost" size="xs" disabled={page === 0 || loading} onClick={onPrev}>
-        <ArrowUp className="size-3 -rotate-90" />
+        <ChevronLeft className="size-3" />
         Prev
       </Button>
       <span className="text-[11px] text-muted-foreground/50 flex items-center gap-1">
         Page {page + 1}
       </span>
-      <Button variant="ghost" size="xs" disabled={loading || !hasResults} onClick={onNext}>
+      <Button variant="ghost" size="xs" disabled={loading || isLastPage} onClick={onNext}>
         Next
-        <ArrowDown className="size-3 -rotate-90" />
+        <ChevronRight className="size-3" />
       </Button>
     </div>
   );

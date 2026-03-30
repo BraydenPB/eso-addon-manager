@@ -16,7 +16,9 @@ import {
   ChevronRight,
   ExternalLink,
   HardDrive,
-  Shield,
+  Hash,
+  Swords,
+  Check,
 } from "lucide-react";
 
 interface DiscoverDetailProps {
@@ -72,6 +74,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
     if (!detail || detail.screenshots.length <= 1) return;
 
     const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "ArrowLeft") {
         setScreenshotIdx((prev) => (prev > 0 ? prev - 1 : detail.screenshots.length - 1));
       } else if (e.key === "ArrowRight") {
@@ -232,17 +235,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
       {/* Install success */}
       {installSuccess && (
         <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3 text-sm text-emerald-400 flex items-center gap-2">
-          <svg
-            className="size-4 shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
+          <Check className="size-4 shrink-0" />
           <span>
             Installed: {installSuccess.installedFolders.join(", ")}
             {installSuccess.installedDeps.length > 0 &&
@@ -282,9 +275,9 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
       {/* Metadata grid */}
       <div className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-3">
         <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:grid-cols-3">
-          <MetaField icon={<Shield className="size-3" />} label="Version" value={detail.version} />
+          <MetaField icon={<Hash className="size-3" />} label="Version" value={detail.version} />
           <MetaField
-            icon={<Shield className="size-3" />}
+            icon={<Swords className="size-3" />}
             label="Compatibility"
             value={detail.compatibility}
           />
@@ -297,16 +290,6 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
             icon={<Calendar className="size-3" />}
             label="Created"
             value={detail.created}
-          />
-          <MetaField
-            icon={<Download className="size-3" />}
-            label="Total Downloads"
-            value={detail.totalDownloads}
-          />
-          <MetaField
-            icon={<FileDown className="size-3" />}
-            label="Monthly Downloads"
-            value={detail.monthlyDownloads}
           />
         </div>
       </div>
