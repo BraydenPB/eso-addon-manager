@@ -179,14 +179,27 @@ pub fn watch_log_start(
     let handle = watcher::watch_log_file(
         &file_path,
         Box::new(move |events| {
-            if let Ok(mut buf) = buffer.lock() {
-                buf.last_event_time = Some(std::time::Instant::now());
-                buf.events.extend(events);
+            match buffer.lock() {
+                Ok(mut buf) => {
+                    buf.last_event_time = Some(std::time::Instant::now());
 
-                // Keep only the last 50,000 events in the rolling buffer
-                if buf.events.len() > 50_000 {
-                    let drain_count = buf.events.len() - 50_000;
-                    buf.events.drain(..drain_count);
+                    // Count CombatEnd events to track completed encounters
+                    let new_encounters = events
+                        .iter()
+                        .filter(|e| e.event_type == super::types::EventType::CombatEnd)
+                        .count();
+                    buf.encounters_completed += new_encounters;
+
+                    buf.events.extend(events);
+
+                    // Keep only the last 50,000 events in the rolling buffer
+                    if buf.events.len() > 50_000 {
+                        let drain_count = buf.events.len() - 50_000;
+                        buf.events.drain(..drain_count);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[live_buffer] Mutex poisoned, dropping events: {}", e);
                 }
             }
         }),

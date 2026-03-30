@@ -20,6 +20,7 @@ interface LogsHomeProps {
   logsPath: string | null;
   detection: LogPathDetection | null;
   logFiles: LogFileInfo[];
+  loadingFiles?: boolean;
   onSetLogsPath: (path: string) => void;
   onOpenLog: (file: LogFileInfo) => void;
   onRefresh: () => void;
@@ -30,6 +31,7 @@ export function LogsHome({
   logsPath,
   detection,
   logFiles,
+  loadingFiles,
   onSetLogsPath,
   onOpenLog,
   onRefresh,
@@ -119,10 +121,10 @@ export function LogsHome({
           <div className="flex-1 truncate text-sm text-muted-foreground">
             {logsPath}
           </div>
-          <Button variant="ghost" size="icon-xs" onClick={() => void handlePickFolder()}>
+          <Button variant="ghost" size="icon-xs" onClick={() => void handlePickFolder()} aria-label="Change log folder">
             <FolderOpen className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={onRefresh}>
+          <Button variant="ghost" size="icon-xs" onClick={onRefresh} aria-label="Refresh log files">
             <RefreshCw className="size-3.5" />
           </Button>
         </GlassPanel>
@@ -190,7 +192,11 @@ export function LogsHome({
         Log Files ({logFiles.length})
       </SectionHeader>
 
-      {logFiles.length === 0 ? (
+      {loadingFiles ? (
+        <div className="flex items-center justify-center py-12">
+          <span className="inline-block size-5 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
+        </div>
+      ) : logFiles.length === 0 ? (
         <GlassPanel variant="subtle" className="flex flex-col items-center gap-3 py-12 text-center">
           <HardDriveDownload className="size-8 text-muted-foreground/30" />
           <p className="text-sm text-muted-foreground/60">

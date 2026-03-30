@@ -62,7 +62,10 @@ export function Characters({ addonsPath, onClose, onViewLogs }: CharactersProps)
       if (!logsPath || characters.length === 0) return;
 
       const filesResult = await invokeResult<LogFileInfo[]>("list_logs", { logsPath });
-      if (!filesResult.ok) return;
+      if (!filesResult.ok) {
+        toast.error("Failed to load log files for encounter history");
+        return;
+      }
 
       // Analyze the 5 most recent log files to find character encounters
       const recentFiles = filesResult.data.slice(0, 5);
@@ -72,7 +75,10 @@ export function Characters({ addonsPath, onClose, onViewLogs }: CharactersProps)
         const analysisResult = await invokeResult<LogAnalysis>("analyze_log", {
           filePath: file.path,
         });
-        if (!analysisResult.ok) continue;
+        if (!analysisResult.ok) {
+          console.warn(`Failed to analyze log file: ${file.fileName}`);
+          continue;
+        }
 
         for (const encounter of analysisResult.data.encounters) {
           for (const player of encounter.players) {

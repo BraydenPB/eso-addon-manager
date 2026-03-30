@@ -40,13 +40,13 @@ pub type OnNewEvents = Box<dyn Fn(Vec<CombatEvent>) + Send + 'static>;
 ///
 /// Watches `path` for changes using `notify` with a polling fallback.
 /// Whenever new bytes are appended, reads the new portion and calls
-/// `on_new_data` with the text and current byte offset. Returns only
-/// when `stop_flag` is set to `true`.
+/// `on_new_data` with the new text. Returns only when `stop_flag` is
+/// set to `true`.
 fn tail_file(
     path: PathBuf,
     initial_offset: u64,
     stop_flag: Arc<Mutex<bool>>,
-    on_new_data: impl Fn(&str, u64) + Send + 'static,
+    on_new_data: impl Fn(&str) + Send + 'static,
 ) {
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
 
@@ -123,7 +123,7 @@ fn tail_file(
 
         match read_range(&path, last_offset, current_size) {
             Ok(new_text) => {
-                on_new_data(&new_text, last_offset);
+                on_new_data(&new_text);
                 last_offset = current_size;
             }
             Err(e) => {
@@ -154,7 +154,7 @@ pub fn watch_log_file(file_path: &str, on_events: OnNewEvents) -> Result<LogWatc
             path,
             initial_size,
             stop_flag_clone,
-            move |new_text, _offset| {
+            move |new_text| {
                 let events = parser::parse_chunk(new_text);
                 if !events.is_empty() {
                     on_events(events);
@@ -200,7 +200,7 @@ pub fn watch_log_lines(
             path,
             initial_size,
             stop_flag_clone,
-            move |new_text, _offset| {
+            move |new_text| {
                 let lines: Vec<String> = new_text
                     .lines()
                     .filter(|l| !l.is_empty())
