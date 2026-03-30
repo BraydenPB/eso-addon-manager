@@ -32,13 +32,8 @@ impl Default for LiveBufferInner {
 
 /// Detect the ESO log directory, using the addon path if available.
 #[tauri::command]
-pub fn detect_log_path(
-    allowed: State<'_, AllowedAddonsPath>,
-) -> Result<LogPathDetection, String> {
-    let addons_path = allowed
-        .0
-        .lock()
-        .map_err(|_| "Failed to read addons path")?;
+pub fn detect_log_path(allowed: State<'_, AllowedAddonsPath>) -> Result<LogPathDetection, String> {
+    let addons_path = allowed.0.lock().map_err(|_| "Failed to read addons path")?;
 
     let ap_str = addons_path
         .as_ref()
@@ -301,10 +296,7 @@ pub fn get_logs_dir() -> Result<String, String> {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         if let Some(docs) = dirs::document_dir() {
-            let path = docs
-                .join("Elder Scrolls Online")
-                .join("live")
-                .join("Logs");
+            let path = docs.join("Elder Scrolls Online").join("live").join("Logs");
             return Ok(path.to_string_lossy().into_owned());
         }
     }

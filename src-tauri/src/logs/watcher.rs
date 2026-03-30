@@ -138,29 +138,29 @@ fn tail_file(
 /// When new lines are appended to the file, they are parsed and the callback
 /// is invoked with the resulting events. The watcher tails the file by tracking
 /// the last-read byte offset.
-pub fn watch_log_file(
-    file_path: &str,
-    on_events: OnNewEvents,
-) -> Result<LogWatchHandle, String> {
+pub fn watch_log_file(file_path: &str, on_events: OnNewEvents) -> Result<LogWatchHandle, String> {
     let path = Path::new(file_path).to_path_buf();
     if !path.is_file() {
         return Err(format!("File does not exist: {}", file_path));
     }
 
-    let initial_size = std::fs::metadata(&path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let initial_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
     let stop_flag = Arc::new(Mutex::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
 
     let thread = thread::spawn(move || {
-        tail_file(path, initial_size, stop_flag_clone, move |new_text, _offset| {
-            let events = parser::parse_chunk(new_text);
-            if !events.is_empty() {
-                on_events(events);
-            }
-        });
+        tail_file(
+            path,
+            initial_size,
+            stop_flag_clone,
+            move |new_text, _offset| {
+                let events = parser::parse_chunk(new_text);
+                if !events.is_empty() {
+                    on_events(events);
+                }
+            },
+        );
     });
 
     Ok(LogWatchHandle {
@@ -189,30 +189,33 @@ pub fn watch_log_lines(
         return Err(format!("File does not exist: {}", file_path));
     }
 
-    let initial_size = std::fs::metadata(&path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let initial_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
     let stop_flag = Arc::new(Mutex::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
     let path_string = file_path.to_string();
 
     let thread = thread::spawn(move || {
-        tail_file(path, initial_size, stop_flag_clone, move |new_text, _offset| {
-            let lines: Vec<String> = new_text
-                .lines()
-                .filter(|l| !l.is_empty())
-                .map(|l| l.to_string())
-                .collect();
+        tail_file(
+            path,
+            initial_size,
+            stop_flag_clone,
+            move |new_text, _offset| {
+                let lines: Vec<String> = new_text
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(|l| l.to_string())
+                    .collect();
 
-            if !lines.is_empty() {
-                let payload = LogUpdatedPayload {
-                    path: path_string.clone(),
-                    new_lines: lines,
-                };
-                let _ = app_handle.emit("log-updated", payload);
-            }
-        });
+                if !lines.is_empty() {
+                    let payload = LogUpdatedPayload {
+                        path: path_string.clone(),
+                        new_lines: lines,
+                    };
+                    let _ = app_handle.emit("log-updated", payload);
+                }
+            },
+        );
     });
 
     Ok(LogWatchHandle {
