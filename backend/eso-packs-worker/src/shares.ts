@@ -37,14 +37,14 @@ function userShareKey(userId: string, code: string): string {
   return `share-user:${userId}:${code}`;
 }
 
-// ── Auth ──────────────────────────────────────────────────────────
+// ── Auth (re-exported for use in other handlers) ─────────────────
 
-interface EsoLogsUser {
+export interface EsoLogsUser {
   id: number;
   name: string;
 }
 
-async function validateBearerToken(request: Request): Promise<EsoLogsUser | null> {
+export async function validateBearerToken(request: Request): Promise<EsoLogsUser | null> {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
 

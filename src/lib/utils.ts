@@ -5,10 +5,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const _htmlDecodeEl = typeof document !== "undefined" ? document.createElement("textarea") : null;
+const _domParser = typeof DOMParser !== "undefined" ? new DOMParser() : null;
 
 export function decodeHtml(str: string): string {
-  if (!_htmlDecodeEl) return str;
-  _htmlDecodeEl.innerHTML = str;
-  return _htmlDecodeEl.value;
+  if (!_domParser) return str;
+  const doc = _domParser.parseFromString(`<!doctype html><body>${str}`, "text/html");
+  return doc.body.textContent ?? "";
 }

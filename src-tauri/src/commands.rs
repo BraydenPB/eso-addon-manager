@@ -2903,14 +2903,24 @@ pub struct EsoPackData {
 pub fn export_pack_file(pack: EsoPackFile, path: String) -> Result<(), String> {
     let file_path = PathBuf::from(&path);
 
-    if path.contains("..") {
-        return Err("Invalid file path.".to_string());
-    }
+    // Ensure file has the expected extension and lives under a real directory
+    let parent = file_path
+        .parent()
+        .ok_or_else(|| "Invalid file path.".to_string())?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|_| "Invalid file path: parent directory does not exist.".to_string())?;
+
+    // Reconstruct the final path under the canonicalized parent to prevent traversal
+    let file_name = file_path
+        .file_name()
+        .ok_or_else(|| "Invalid file path: no file name.".to_string())?;
+    let safe_path = canonical_parent.join(file_name);
 
     let json = serde_json::to_string_pretty(&pack)
         .map_err(|e| format!("Failed to serialize pack: {}", e))?;
 
-    fs::write(&file_path, json).map_err(|e| format!("Failed to write file: {}", e))
+    fs::write(&safe_path, json).map_err(|e| format!("Failed to write file: {}", e))
 }
 
 #[tauri::command]

@@ -3,7 +3,7 @@ import { getPack, getPackIndex, packToIndexItem, putPack, putPackIndex, getVote,
 import { corsHeaders, handlePreflight } from "./cors";
 import { validatePack } from "./validate";
 import { SEED_PACKS } from "./seed";
-import { handleCreateShare, handleResolveShare } from "./shares";
+import { handleCreateShare, handleResolveShare, validateBearerToken } from "./shares";
 
 function json(request: Request, data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -29,7 +29,13 @@ function unauthorized(request: Request): Response {
 
 function requireAuth(request: Request, env: Env): boolean {
   const key = request.headers.get("X-API-Key");
-  return key === env.ADMIN_API_KEY;
+  if (!key || !env.ADMIN_API_KEY) return false;
+  // Constant-time comparison to prevent timing attacks
+  if (key.length !== env.ADMIN_API_KEY.length) return false;
+  const encoder = new TextEncoder();
+  const a = encoder.encode(key);
+  const b = encoder.encode(env.ADMIN_API_KEY);
+  return crypto.subtle.timingSafeEqual(a, b);
 }
 
 // ── GET /packs ─────────────────────────────────────────────────────
@@ -219,7 +225,9 @@ async function handleVotePack(
   env: Env,
   id: string,
 ): Promise<Response> {
-  if (!requireAuth(request, env)) {
+  // Authenticate via Bearer token and extract verified user identity
+  const user = await validateBearerToken(request);
+  if (!user) {
     return unauthorized(request);
   }
 
@@ -228,8 +236,7 @@ async function handleVotePack(
     return notFound(request, `Pack "${id}" not found`);
   }
 
-  // Use a simple user identifier from the API key (in production, extract from JWT)
-  const userId = request.headers.get("X-User-Id") ?? "api-key-user";
+  const userId = String(user.id);
 
   const existingVote = await getVote(env, id, userId);
   let voted: boolean;

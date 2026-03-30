@@ -10,6 +10,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// The website URL that handles the OAuth flow and passes tokens back.
 const APP_AUTH_URL: &str = "https://eso-toolkit.github.io/dev-previews/pr-925/app-auth";
 
+/// Allowed CORS origin for the OAuth callback server.
+const ALLOWED_ORIGIN: &str = "https://eso-toolkit.github.io";
+
 const USER_API: &str = "https://www.esologs.com/api/v2/user";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -111,17 +114,24 @@ pub fn run_oauth_flow() -> Result<CallbackTokens, String> {
     // Open browser to the website's app-auth page
     let auth_url = format!("{}?port={}", APP_AUTH_URL, port);
 
+    // Validate the URL before passing to the OS to prevent command injection
+    let parsed =
+        url::Url::parse(&auth_url).map_err(|_| "Failed to construct auth URL.".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("Auth URL must use HTTPS.".to_string());
+    }
+
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("cmd")
-            .args(["/C", "start", "", &auth_url])
+            .args(["/C", "start", "", parsed.as_str()])
             .spawn()
             .map_err(|e| format!("Failed to open browser: {}", e))?;
     }
     #[cfg(not(target_os = "windows"))]
     {
         std::process::Command::new("xdg-open")
-            .arg(&auth_url)
+            .arg(parsed.as_str())
             .spawn()
             .map_err(|e| format!("Failed to open browser: {}", e))?;
     }
@@ -150,8 +160,9 @@ pub fn run_oauth_flow() -> Result<CallbackTokens, String> {
                     // Send success page
                     let html = r#"<!DOCTYPE html><html><head><style>body{font-family:system-ui;background:#0b1220;color:#e5e7eb;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}div{text-align:center}h1{color:#c4a44a;font-size:1.5rem}p{opacity:0.6}</style></head><body><div><h1>Signed in!</h1><p>You can close this tab and return to ESO Addon Manager.</p></div></body></html>"#;
                     let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n{}",
                         html.len(),
+                        ALLOWED_ORIGIN,
                         html
                     );
                     let _ = stream.write_all(response.as_bytes());
@@ -159,7 +170,10 @@ pub fn run_oauth_flow() -> Result<CallbackTokens, String> {
                     return Ok(tokens);
                 } else if request.contains("OPTIONS") {
                     // Handle CORS preflight
-                    let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: {}\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                        ALLOWED_ORIGIN
+                    );
                     let _ = stream.write_all(response.as_bytes());
                 } else {
                     let response =
