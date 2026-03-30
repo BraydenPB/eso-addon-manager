@@ -109,9 +109,7 @@ fn infer_boss_name(events: &[&(CombatEvent, u64, u64)]) -> String {
     for entry in events {
         let event = &entry.0;
         if event.event_type == EventType::DamageDealt && !event.target.is_player {
-            *target_damage
-                .entry(event.target.name.clone())
-                .or_insert(0) += event.value;
+            *target_damage.entry(event.target.name.clone()).or_insert(0) += event.value;
         }
     }
 
@@ -131,7 +129,10 @@ fn check_boss_killed(events: &[&(CombatEvent, u64, u64)], boss_name: &str) -> bo
 }
 
 /// Aggregate per-player statistics for the encounter.
-fn aggregate_players(events: &[&(CombatEvent, u64, u64)], duration_secs: f64) -> Vec<PlayerSummary> {
+fn aggregate_players(
+    events: &[&(CombatEvent, u64, u64)],
+    duration_secs: f64,
+) -> Vec<PlayerSummary> {
     struct Accumulator {
         damage_dealt: i64,
         healing_done: i64,
@@ -145,11 +146,13 @@ fn aggregate_players(events: &[&(CombatEvent, u64, u64)], duration_secs: f64) ->
 
         // Track source player stats
         if event.source.is_player && !event.source.name.is_empty() {
-            let acc = players.entry(event.source.name.clone()).or_insert(Accumulator {
-                damage_dealt: 0,
-                healing_done: 0,
-                deaths: 0,
-            });
+            let acc = players
+                .entry(event.source.name.clone())
+                .or_insert(Accumulator {
+                    damage_dealt: 0,
+                    healing_done: 0,
+                    deaths: 0,
+                });
 
             match event.event_type {
                 EventType::DamageDealt => acc.damage_dealt += event.value,
@@ -197,7 +200,11 @@ fn aggregate_players(events: &[&(CombatEvent, u64, u64)], duration_secs: f64) ->
         .collect();
 
     // Sort by DPS descending
-    result.sort_by(|a, b| b.dps.partial_cmp(&a.dps).unwrap_or(std::cmp::Ordering::Equal));
+    result.sort_by(|a, b| {
+        b.dps
+            .partial_cmp(&a.dps)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     result
 }
@@ -230,7 +237,15 @@ mod tests {
     use super::*;
     use crate::logs::types::{AbilityInfo, UnitInfo};
 
-    fn make_event(ts: u64, event_type: EventType, source_name: &str, target_name: &str, value: i64, source_player: bool, target_player: bool) -> (CombatEvent, u64, u64) {
+    fn make_event(
+        ts: u64,
+        event_type: EventType,
+        source_name: &str,
+        target_name: &str,
+        value: i64,
+        source_player: bool,
+        target_player: bool,
+    ) -> (CombatEvent, u64, u64) {
         (
             CombatEvent {
                 timestamp: ts,
@@ -262,9 +277,33 @@ mod tests {
     #[test]
     fn detect_single_encounter_by_gap() {
         let events = vec![
-            make_event(1000, EventType::DamageDealt, "@Player", "Boss", 100, true, false),
-            make_event(2000, EventType::DamageDealt, "@Player", "Boss", 200, true, false),
-            make_event(3000, EventType::UnitDeath, "@Player", "Boss", 0, true, false),
+            make_event(
+                1000,
+                EventType::DamageDealt,
+                "@Player",
+                "Boss",
+                100,
+                true,
+                false,
+            ),
+            make_event(
+                2000,
+                EventType::DamageDealt,
+                "@Player",
+                "Boss",
+                200,
+                true,
+                false,
+            ),
+            make_event(
+                3000,
+                EventType::UnitDeath,
+                "@Player",
+                "Boss",
+                0,
+                true,
+                false,
+            ),
         ];
 
         let encounters = detect_encounters(&events);
@@ -276,11 +315,43 @@ mod tests {
     #[test]
     fn detect_two_encounters_by_gap() {
         let events = vec![
-            make_event(1000, EventType::DamageDealt, "@Player", "Boss1", 100, true, false),
-            make_event(2000, EventType::DamageDealt, "@Player", "Boss1", 200, true, false),
+            make_event(
+                1000,
+                EventType::DamageDealt,
+                "@Player",
+                "Boss1",
+                100,
+                true,
+                false,
+            ),
+            make_event(
+                2000,
+                EventType::DamageDealt,
+                "@Player",
+                "Boss1",
+                200,
+                true,
+                false,
+            ),
             // 20s gap -> new encounter
-            make_event(22000, EventType::DamageDealt, "@Player", "Boss2", 300, true, false),
-            make_event(23000, EventType::DamageDealt, "@Player", "Boss2", 400, true, false),
+            make_event(
+                22000,
+                EventType::DamageDealt,
+                "@Player",
+                "Boss2",
+                300,
+                true,
+                false,
+            ),
+            make_event(
+                23000,
+                EventType::DamageDealt,
+                "@Player",
+                "Boss2",
+                400,
+                true,
+                false,
+            ),
         ];
 
         let encounters = detect_encounters(&events);
@@ -293,7 +364,15 @@ mod tests {
     fn detect_encounter_by_combat_events() {
         let events = vec![
             make_event(1000, EventType::CombatStart, "@Player", "", 0, true, false),
-            make_event(2000, EventType::DamageDealt, "@Player", "Dragon", 500, true, false),
+            make_event(
+                2000,
+                EventType::DamageDealt,
+                "@Player",
+                "Dragon",
+                500,
+                true,
+                false,
+            ),
             make_event(3000, EventType::CombatEnd, "@Player", "", 0, true, false),
         ];
 
