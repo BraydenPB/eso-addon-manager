@@ -287,7 +287,7 @@ export function AddonList({
   );
 
   return (
-    <div className="flex w-[380px] min-w-[300px] flex-col border-r border-white/[0.06] bg-[rgba(10,18,36,0.6)] backdrop-blur-xl backdrop-saturate-[1.2] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="flex min-h-0 w-[380px] min-w-[300px] flex-col border-r border-white/[0.06] bg-[rgba(10,18,36,0.6)] backdrop-blur-xl backdrop-saturate-[1.2] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
       {/* Mode switcher */}
       <div className="px-3 pt-3 pb-2">
         <Tabs value={viewMode} onValueChange={(v) => onViewModeChange(v as ViewMode)}>

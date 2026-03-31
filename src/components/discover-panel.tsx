@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import type {
   DiscoverTab,
@@ -19,6 +19,10 @@ import {
 } from "@/components/ui/select";
 import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { Download, Clock, TrendingUp, Search, FolderOpen, Link, Flame, Check } from "lucide-react";
+import { useInfiniteScroll } from "@/lib/use-infinite-scroll";
+
+const PAGE_SIZE = 25;
 
 interface DiscoverPanelProps {
   activeTab: DiscoverTab;
@@ -66,15 +70,19 @@ function DiscoverResultRow({
   installingId,
   onSelect,
   onInstall,
-  subtitle,
+  showMeta = false,
+  rank,
 }: {
   result: EsouiSearchResult;
   selected: boolean;
   installingId: number | null;
   onSelect: () => void;
   onInstall: () => void;
-  subtitle: React.ReactNode;
+  showMeta?: boolean;
+  rank?: number;
 }) {
+  const isInstalling = installingId === result.id;
+
   return (
     <div
       className={cn(
@@ -84,7 +92,19 @@ function DiscoverResultRow({
       )}
       onClick={onSelect}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
+        {rank != null && (
+          <span
+            className={cn(
+              "shrink-0 size-6 flex items-center justify-center rounded-md text-[11px] font-bold font-heading tabular-nums",
+              rank <= 3
+                ? "bg-[#c4a44a]/12 text-[#c4a44a] border border-[#c4a44a]/20"
+                : "bg-white/[0.03] text-muted-foreground/40 border border-white/[0.06]"
+            )}
+          >
+            {rank}
+          </span>
+        )}
         <span className="flex-1 truncate text-sm font-medium">{result.title}</span>
         <Button
           size="xs"
@@ -93,20 +113,50 @@ function DiscoverResultRow({
             onInstall();
           }}
           disabled={installingId !== null}
-          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+          className={cn(
+            "shrink-0 transition-all",
+            isInstalling ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
         >
-          {installingId === result.id ? "..." : "Install"}
+          {isInstalling ? (
+            <span className="flex items-center gap-1">
+              <span className="inline-block size-3 animate-spin rounded-full border-2 border-[#0b1220]/20 border-t-[#0b1220]" />
+              Installing
+            </span>
+          ) : (
+            "Install"
+          )}
         </Button>
       </div>
-      {subtitle}
+      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/60">
+        {result.author && <span className="truncate">by {result.author}</span>}
+        {result.category && <InfoPill color="muted">{result.category}</InfoPill>}
+      </div>
+      {showMeta && (
+        <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground/40">
+          {result.downloads && (
+            <span className="flex items-center gap-1">
+              <Download className="size-3" />
+              {result.downloads}
+            </span>
+          )}
+          {result.updated && (
+            <span className="flex items-center gap-1">
+              <Clock className="size-3" />
+              {result.updated}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-const DISCOVER_TABS: [DiscoverTab, string][] = [
-  ["search", "Search"],
-  ["categories", "Categories"],
-  ["url", "URL / ID"],
+const DISCOVER_TABS: [DiscoverTab, string, React.FC<{ className?: string }>][] = [
+  ["search", "Search", Search],
+  ["popular", "Popular", Flame],
+  ["categories", "Categories", FolderOpen],
+  ["url", "URL / ID", Link],
 ];
 
 export function DiscoverPanel({
@@ -118,33 +168,38 @@ export function DiscoverPanel({
   selectedResultId,
 }: DiscoverPanelProps) {
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Sub-tab selector */}
-      <div
-        className="flex gap-1 px-3 pb-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        role="tablist"
-        aria-label="Discover mode"
-      >
-        {DISCOVER_TABS.map(([tab, label]) => (
+      <div className="flex gap-1 px-3 pb-2" role="tablist" aria-label="Discover mode">
+        {DISCOVER_TABS.map(([tab, label, Icon]) => (
           <button
             key={tab}
             role="tab"
             aria-selected={activeTab === tab}
             className={cn(
-              "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150",
+              "flex-1 min-w-0 rounded-lg px-1.5 py-1 text-xs font-medium transition-all duration-150 flex items-center justify-center gap-1",
               activeTab === tab
                 ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
                 : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
             )}
             onClick={() => onTabChange(tab)}
           >
-            {label}
+            <Icon className="size-3 shrink-0" />
+            <span className="truncate">{label}</span>
           </button>
         ))}
       </div>
 
       {activeTab === "search" && (
         <SearchContent
+          addonsPath={addonsPath}
+          onInstalled={onInstalled}
+          onSelectResult={onSelectResult}
+          selectedResultId={selectedResultId}
+        />
+      )}
+      {activeTab === "popular" && (
+        <PopularContent
           addonsPath={addonsPath}
           onInstalled={onInstalled}
           onSelectResult={onSelectResult}
@@ -183,6 +238,7 @@ function SearchContent({
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchIdRef = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => {
@@ -215,6 +271,31 @@ function SearchContent({
     debounceRef.current = setTimeout(() => handleSearch(value), 500);
   };
 
+  // Keyboard navigation
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (results.length === 0) return;
+      const currentIdx = results.findIndex((r) => r.id === selectedResultId);
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = currentIdx < results.length - 1 ? currentIdx + 1 : 0;
+        onSelectResult(results[next]);
+        listRef.current?.querySelectorAll("[data-result-row]")?.[next]?.scrollIntoView({
+          block: "nearest",
+        });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const prev = currentIdx > 0 ? currentIdx - 1 : results.length - 1;
+        onSelectResult(results[prev]);
+        listRef.current?.querySelectorAll("[data-result-row]")?.[prev]?.scrollIntoView({
+          block: "nearest",
+        });
+      }
+    },
+    [results, selectedResultId, onSelectResult]
+  );
+
   return (
     <>
       <div className="px-3 pb-2">
@@ -225,39 +306,172 @@ function SearchContent({
           onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") handleSearch(query);
+            handleKeyDown(e);
           }}
           autoFocus
         />
       </div>
-      <div className="flex-1 overflow-y-auto">
+
+      {/* Results count bar */}
+      {results.length > 0 && (
+        <div className="flex items-center justify-between px-3 pb-1.5">
+          <span className="text-[11px] font-heading font-bold uppercase tracking-[0.05em] text-muted-foreground/50">
+            {results.length} result{results.length !== 1 ? "s" : ""}
+          </span>
+          <span className="text-[11px] text-muted-foreground/30">&uarr;&darr; to navigate</span>
+        </div>
+      )}
+
+      <div ref={listRef} className="flex-1 overflow-y-auto">
         {searching ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
-            <span className="inline-block size-5 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
-            <span className="ml-2">Searching...</span>
-          </div>
+          <LoadingSpinner message="Searching..." />
         ) : results.length === 0 && query.trim() ? (
-          <div className="py-8 text-center text-muted-foreground text-sm">No results found</div>
+          <EmptyState
+            icon={<Search className="size-8 text-muted-foreground/30" />}
+            title="No results found"
+            subtitle={`Try different keywords for "${query}"`}
+          />
         ) : results.length === 0 ? (
-          <div className="py-8 text-center text-muted-foreground/50 text-sm">
-            Type to search ESOUI
-          </div>
+          <EmptyState
+            icon={<Search className="size-8 text-muted-foreground/20" />}
+            title="Search ESOUI"
+            subtitle="Type to find addons by name, author, or keyword"
+          />
         ) : (
           results.map((r) => (
-            <DiscoverResultRow
-              key={r.id}
-              result={r}
-              selected={selectedResultId === r.id}
-              installingId={installingId}
-              onSelect={() => onSelectResult(r)}
-              onInstall={() => handleInstall(r.id)}
-              subtitle={
-                <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground/60">
-                  <span>by {r.author}</span>
-                  {r.category && <InfoPill color="muted">{r.category}</InfoPill>}
-                </div>
-              }
-            />
+            <div key={r.id} data-result-row>
+              <DiscoverResultRow
+                result={r}
+                selected={selectedResultId === r.id}
+                installingId={installingId}
+                onSelect={() => onSelectResult(r)}
+                onInstall={() => handleInstall(r.id)}
+                showMeta
+              />
+            </div>
           ))
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ── Popular Tab ─────────────────────────────────────── */
+
+type PopularSort = "downloads" | "newest";
+
+function PopularContent({
+  addonsPath,
+  onInstalled,
+  onSelectResult,
+  selectedResultId,
+}: {
+  addonsPath: string;
+  onInstalled: () => void;
+  onSelectResult: (result: EsouiSearchResult | null) => void;
+  selectedResultId: number | null;
+}) {
+  const [sortBy, setSortBy] = useState<PopularSort>("downloads");
+  const [results, setResults] = useState<EsouiSearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const pageRef = useRef(0);
+  const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
+
+  const loadPage = useCallback(async (p: number, sort: PopularSort, append: boolean) => {
+    setLoading(true);
+    try {
+      const r = await invokeOrThrow<EsouiSearchResult[]>("browse_esoui_popular", {
+        page: p,
+        sortBy: sort,
+      });
+      setResults((prev) => (append ? [...prev, ...r] : r));
+      setHasMore(r.length >= PAGE_SIZE);
+      pageRef.current = p;
+    } catch (e) {
+      toast.error(getTauriErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Load on mount
+  useEffect(() => {
+    loadPage(0, "downloads", false);
+  }, [loadPage]);
+
+  const loadMore = useCallback(() => {
+    const next = pageRef.current + 1;
+    loadPage(next, sortBy, true);
+  }, [sortBy, loadPage]);
+
+  const sentinelRef = useInfiniteScroll(loadMore, { hasMore, isLoading: loading });
+
+  const handleSortChange = (sort: string | null) => {
+    if (!sort) return;
+    setSortBy(sort as PopularSort);
+    setHasMore(true);
+    onSelectResult(null);
+    loadPage(0, sort as PopularSort, false);
+  };
+
+  return (
+    <>
+      <div className="px-3 pb-2">
+        <div className="flex gap-1.5">
+          <button
+            className={cn(
+              "flex-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-150 flex items-center justify-center gap-1.5",
+              sortBy === "downloads"
+                ? "bg-[#c4a44a]/15 text-[#c4a44a] border border-[#c4a44a]/25"
+                : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-white/[0.06]"
+            )}
+            onClick={() => handleSortChange("downloads")}
+          >
+            <TrendingUp className="size-3" />
+            Most Popular
+          </button>
+          <button
+            className={cn(
+              "flex-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-150 flex items-center justify-center gap-1.5",
+              sortBy === "newest"
+                ? "bg-[#c4a44a]/15 text-[#c4a44a] border border-[#c4a44a]/25"
+                : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-white/[0.06]"
+            )}
+            onClick={() => handleSortChange("newest")}
+          >
+            <Clock className="size-3" />
+            Recently Updated
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {results.length === 0 && loading ? (
+          <LoadingSpinner message="Loading popular addons..." />
+        ) : results.length === 0 ? (
+          <EmptyState
+            icon={<Flame className="size-8 text-muted-foreground/20" />}
+            title="No addons found"
+            subtitle="Could not load popular addons"
+          />
+        ) : (
+          <>
+            {results.map((r, idx) => (
+              <DiscoverResultRow
+                key={r.id}
+                result={r}
+                selected={selectedResultId === r.id}
+                installingId={installingId}
+                onSelect={() => onSelectResult(r)}
+                onInstall={() => handleInstall(r.id)}
+                showMeta
+                rank={idx + 1}
+              />
+            ))}
+            {hasMore && <div ref={sentinelRef} className="h-1" />}
+            {loading && <LoadingSpinner message="Loading more..." />}
+          </>
         )}
       </div>
     </>
@@ -282,8 +496,10 @@ function CategoryContent({
   const [sortBy, setSortBy] = useState("downloads");
   const [results, setResults] = useState<EsouiSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [filterText, setFilterText] = useState("");
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
+  const pageRef = useRef(0);
 
   useEffect(() => {
     void invokeResult<EsouiCategory[]>("get_esoui_categories").then((result) => {
@@ -295,7 +511,7 @@ function CategoryContent({
     });
   }, []);
 
-  const loadCategory = async (catId: number, p: number, sort: string) => {
+  const loadPage = useCallback(async (catId: number, p: number, sort: string, append: boolean) => {
     setLoading(true);
     try {
       const r = await invokeOrThrow<EsouiSearchResult[]>("browse_esoui_category", {
@@ -303,38 +519,66 @@ function CategoryContent({
         page: p,
         sortBy: sort,
       });
-      setResults(r);
+      setResults((prev) => (append ? [...prev, ...r] : r));
+      setHasMore(r.length >= PAGE_SIZE);
+      pageRef.current = p;
     } catch (e) {
       toast.error(getTauriErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const loadMore = useCallback(() => {
+    if (!selectedCategory) return;
+    const next = pageRef.current + 1;
+    loadPage(selectedCategory, next, sortBy, true);
+  }, [selectedCategory, sortBy, loadPage]);
+
+  const sentinelRef = useInfiniteScroll(loadMore, {
+    hasMore: hasMore && !filterText,
+    isLoading: loading,
+  });
 
   const handleCategoryChange = (catId: string | null) => {
     if (!catId) return;
     const id = Number(catId);
     setSelectedCategory(id);
-    setPage(0);
+    setFilterText("");
+    setHasMore(true);
     onSelectResult(null);
-    loadCategory(id, 0, sortBy);
+    loadPage(id, 0, sortBy, false);
   };
 
   const handleSortChange = (sort: string | null) => {
     if (!sort) return;
     setSortBy(sort);
+    setFilterText("");
     if (selectedCategory) {
-      setPage(0);
-      loadCategory(selectedCategory, 0, sort);
+      setHasMore(true);
+      loadPage(selectedCategory, 0, sort, false);
     }
   };
+
+  const filteredResults = useMemo(() => {
+    if (!filterText.trim()) return results;
+    const q = filterText.toLowerCase();
+    return results.filter(
+      (r) => r.title.toLowerCase().includes(q) || r.author.toLowerCase().includes(q)
+    );
+  }, [results, filterText]);
+
+  const selectedCategoryName = useMemo(
+    () => categories.find((c) => c.id === selectedCategory)?.name ?? null,
+    [categories, selectedCategory]
+  );
 
   return (
     <>
       <div className="space-y-2 px-3 pb-2">
         <Select onValueChange={handleCategoryChange}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a category..." />
+            <SelectValue placeholder="Select a category...">{selectedCategoryName}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {categories.map((cat) => (
@@ -344,76 +588,80 @@ function CategoryContent({
             ))}
           </SelectContent>
         </Select>
-        <Select value={sortBy} onValueChange={handleSortChange}>
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="downloads">Most Popular</SelectItem>
-            <SelectItem value="newest">Recently Updated</SelectItem>
-            <SelectItem value="name">Name</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+        <div className="flex gap-2">
+          <Select value={sortBy} onValueChange={handleSortChange}>
+            <SelectTrigger className="flex-1">
+              <SelectValue>
+                {{ downloads: "Most Popular", newest: "Recently Updated", name: "Name" }[sortBy]}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="downloads">Most Popular</SelectItem>
+              <SelectItem value="newest">Recently Updated</SelectItem>
+              <SelectItem value="name">Name</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
-            <span className="inline-block size-5 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
-            <span className="ml-2">Loading...</span>
-          </div>
-        ) : results.length === 0 ? (
-          <div className="py-8 text-center text-muted-foreground/50 text-sm">
-            {selectedCategory ? "No addons in this category" : "Select a category to browse"}
-          </div>
-        ) : (
-          results.map((r) => (
-            <DiscoverResultRow
-              key={r.id}
-              result={r}
-              selected={selectedResultId === r.id}
-              installingId={installingId}
-              onSelect={() => onSelectResult(r)}
-              onInstall={() => handleInstall(r.id)}
-              subtitle={
-                r.category ? (
-                  <div className="mt-0.5 text-xs text-muted-foreground/60">{r.category}</div>
-                ) : null
-              }
-            />
-          ))
+        {/* Inline filter for loaded results */}
+        {results.length > 0 && (
+          <Input
+            placeholder={`Filter ${selectedCategoryName ?? "results"}...`}
+            aria-label="Filter category results"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            className="h-7 text-xs"
+          />
         )}
       </div>
 
+      {/* Results count */}
       {results.length > 0 && (
-        <div className="flex items-center justify-between border-t border-white/[0.06] px-3 py-1.5">
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={page === 0 || loading}
-            onClick={() => {
-              const p = page - 1;
-              setPage(p);
-              if (selectedCategory) loadCategory(selectedCategory, p, sortBy);
-            }}
-          >
-            Prev
-          </Button>
-          <span className="text-[11px] text-muted-foreground/50">Page {page + 1}</span>
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={loading || results.length === 0}
-            onClick={() => {
-              const p = page + 1;
-              setPage(p);
-              if (selectedCategory) loadCategory(selectedCategory, p, sortBy);
-            }}
-          >
-            Next
-          </Button>
+        <div className="flex items-center justify-between px-3 pb-1">
+          <span className="text-[11px] font-heading font-bold uppercase tracking-[0.05em] text-muted-foreground/50">
+            {filterText ? `${filteredResults.length} of ${results.length}` : results.length} addon
+            {(filterText ? filteredResults.length : results.length) !== 1 ? "s" : ""}
+          </span>
         </div>
       )}
+
+      <div className="flex-1 overflow-y-auto">
+        {results.length === 0 && loading ? (
+          <LoadingSpinner message="Loading..." />
+        ) : filteredResults.length === 0 && filterText ? (
+          <EmptyState
+            icon={<Search className="size-8 text-muted-foreground/20" />}
+            title="No matches"
+            subtitle={`No addons matching "${filterText}"`}
+          />
+        ) : results.length === 0 ? (
+          <EmptyState
+            icon={<FolderOpen className="size-8 text-muted-foreground/20" />}
+            title={selectedCategory ? "No addons in this category" : "Browse Categories"}
+            subtitle={
+              selectedCategory
+                ? "Try a different category or sort order"
+                : "Select a category above to explore addons"
+            }
+          />
+        ) : (
+          <>
+            {filteredResults.map((r) => (
+              <DiscoverResultRow
+                key={r.id}
+                result={r}
+                selected={selectedResultId === r.id}
+                installingId={installingId}
+                onSelect={() => onSelectResult(r)}
+                onInstall={() => handleInstall(r.id)}
+                showMeta
+              />
+            ))}
+            {hasMore && !filterText && <div ref={sentinelRef} className="h-1" />}
+            {loading && <LoadingSpinner message="Loading more..." />}
+          </>
+        )}
+      </div>
     </>
   );
 }
@@ -495,6 +743,25 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
         />
       </div>
 
+      <div className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-3 space-y-2">
+        <div className="text-[11px] font-heading font-bold uppercase tracking-[0.05em] text-muted-foreground/40">
+          Supported formats
+        </div>
+        <div className="space-y-1 text-xs text-muted-foreground/50">
+          <div className="flex items-center gap-2">
+            <span className="text-[#c4a44a]/60">1.</span>
+            <code className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[11px]">
+              https://esoui.com/downloads/info123
+            </code>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[#c4a44a]/60">2.</span>
+            <code className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[11px]">123</code>
+            <span className="text-muted-foreground/30">(addon ID)</span>
+          </div>
+        </div>
+      </div>
+
       {(state === "idle" || state === "error") && (
         <Button onClick={handleResolve} disabled={!input.trim()} className="w-full" size="sm">
           Resolve
@@ -503,18 +770,25 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
 
       {state === "resolving" && (
         <Button disabled className="w-full" size="sm">
+          <span className="inline-block size-3 animate-spin rounded-full border-2 border-[#0b1220]/20 border-t-[#0b1220] mr-2" />
           Resolving...
         </Button>
       )}
 
       {addonInfo && state === "resolved" && (
-        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
+        <div className="rounded-xl border border-[#c4a44a]/15 bg-[#c4a44a]/[0.03] p-3 space-y-2">
           <div className="font-heading font-medium bg-gradient-to-r from-[#c4a44a] to-[#d4b45a] bg-clip-text text-transparent">
             {addonInfo.title}
           </div>
-          <div className="text-xs text-muted-foreground/60">
-            ESOUI #{addonInfo.id}
-            {addonInfo.version && ` \u00b7 v${addonInfo.version}`}
+          <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
+            <span>ESOUI #{addonInfo.id}</span>
+            {addonInfo.version && <span>v{addonInfo.version}</span>}
+            {addonInfo.updated && (
+              <span className="flex items-center gap-1">
+                <Clock className="size-3" />
+                {addonInfo.updated}
+              </span>
+            )}
           </div>
           <Button onClick={handleInstall} className="w-full" size="sm">
             Install
@@ -524,17 +798,20 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
 
       {state === "installing" && (
         <Button disabled className="w-full" size="sm">
+          <span className="inline-block size-3 animate-spin rounded-full border-2 border-[#0b1220]/20 border-t-[#0b1220] mr-2" />
           Installing...
         </Button>
       )}
 
       {state === "installed" && result && (
         <div className="space-y-2">
-          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3 text-sm text-emerald-400">
+          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3 text-sm text-emerald-400 flex items-center gap-2">
+            <Check className="size-4 shrink-0" />
             Installed: {result.installedFolders.join(", ")}
           </div>
           {result.installedDeps.length > 0 && (
-            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3 text-sm text-emerald-400">
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3 text-sm text-emerald-400 flex items-center gap-2">
+              <Check className="size-4 shrink-0" />
               Deps: {result.installedDeps.join(", ")}
             </div>
           )}
@@ -546,6 +823,45 @@ function UrlContent({ addonsPath, onInstalled }: { addonsPath: string; onInstall
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Shared Components ────────────────────────────────── */
+
+function LoadingSpinner({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
+      <div className="relative">
+        <span className="inline-block size-6 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
+        <span
+          className="absolute inset-0 inline-block size-6 animate-spin rounded-full border-2 border-transparent border-b-[#c4a44a]/30"
+          style={{ animationDirection: "reverse", animationDuration: "1.5s" }}
+        />
+      </div>
+      <span className="text-sm">{message}</span>
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 gap-3 px-6">
+      <div className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-4 shadow-[0_0_30px_rgba(196,164,74,0.03)]">
+        {icon}
+      </div>
+      <div className="text-center">
+        <p className="font-heading text-sm font-medium text-foreground/70">{title}</p>
+        <p className="mt-1 text-xs text-muted-foreground/40 max-w-[200px]">{subtitle}</p>
+      </div>
     </div>
   );
 }
