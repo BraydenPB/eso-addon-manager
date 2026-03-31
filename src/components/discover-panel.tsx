@@ -19,18 +19,8 @@ import {
 } from "@/components/ui/select";
 import { getTauriErrorMessage, invokeOrThrow, invokeResult } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import {
-  Download,
-  Clock,
-  TrendingUp,
-  Search,
-  FolderOpen,
-  Link,
-  Flame,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-} from "lucide-react";
+import { Download, Clock, TrendingUp, Search, FolderOpen, Link, Flame, Check } from "lucide-react";
+import { useInfiniteScroll } from "@/lib/use-infinite-scroll";
 
 const PAGE_SIZE = 25;
 
@@ -81,6 +71,7 @@ function DiscoverResultRow({
   onSelect,
   onInstall,
   showMeta = false,
+  rank,
 }: {
   result: EsouiSearchResult;
   selected: boolean;
@@ -88,6 +79,7 @@ function DiscoverResultRow({
   onSelect: () => void;
   onInstall: () => void;
   showMeta?: boolean;
+  rank?: number;
 }) {
   const isInstalling = installingId === result.id;
 
@@ -100,7 +92,19 @@ function DiscoverResultRow({
       )}
       onClick={onSelect}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
+        {rank != null && (
+          <span
+            className={cn(
+              "shrink-0 size-6 flex items-center justify-center rounded-md text-[11px] font-bold font-heading tabular-nums",
+              rank <= 3
+                ? "bg-[#c4a44a]/12 text-[#c4a44a] border border-[#c4a44a]/20"
+                : "bg-white/[0.03] text-muted-foreground/40 border border-white/[0.06]"
+            )}
+          >
+            {rank}
+          </span>
+        )}
         <span className="flex-1 truncate text-sm font-medium">{result.title}</span>
         <Button
           size="xs"
@@ -111,9 +115,7 @@ function DiscoverResultRow({
           disabled={installingId !== null}
           className={cn(
             "shrink-0 transition-all",
-            isInstalling
-              ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100"
+            isInstalling ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
         >
           {isInstalling ? (
@@ -127,7 +129,7 @@ function DiscoverResultRow({
         </Button>
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/60">
-        <span className="truncate">by {result.author}</span>
+        {result.author && <span className="truncate">by {result.author}</span>}
         {result.category && <InfoPill color="muted">{result.category}</InfoPill>}
       </div>
       {showMeta && (
@@ -166,28 +168,24 @@ export function DiscoverPanel({
   selectedResultId,
 }: DiscoverPanelProps) {
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Sub-tab selector */}
-      <div
-        className="flex gap-1 px-3 pb-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        role="tablist"
-        aria-label="Discover mode"
-      >
+      <div className="flex gap-1 px-3 pb-2" role="tablist" aria-label="Discover mode">
         {DISCOVER_TABS.map(([tab, label, Icon]) => (
           <button
             key={tab}
             role="tab"
             aria-selected={activeTab === tab}
             className={cn(
-              "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150 flex items-center gap-1.5",
+              "flex-1 min-w-0 rounded-lg px-1.5 py-1 text-xs font-medium transition-all duration-150 flex items-center justify-center gap-1",
               activeTab === tab
                 ? "bg-[#c4a44a]/15 text-[#c4a44a] shadow-[0_0_8px_rgba(196,164,74,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#c4a44a]/25"
                 : "text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border border-transparent"
             )}
             onClick={() => onTabChange(tab)}
           >
-            <Icon className="size-3" />
-            {label}
+            <Icon className="size-3 shrink-0" />
+            <span className="truncate">{label}</span>
           </button>
         ))}
       </div>
@@ -320,9 +318,7 @@ function SearchContent({
           <span className="text-[11px] font-heading font-bold uppercase tracking-[0.05em] text-muted-foreground/50">
             {results.length} result{results.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[11px] text-muted-foreground/30">
-            &uarr;&darr; to navigate
-          </span>
+          <span className="text-[11px] text-muted-foreground/30">&uarr;&darr; to navigate</span>
         </div>
       )}
 
@@ -378,20 +374,20 @@ function PopularContent({
   const [sortBy, setSortBy] = useState<PopularSort>("downloads");
   const [results, setResults] = useState<EsouiSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const pageRef = useRef(0);
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
-  const listRef = useRef<HTMLDivElement>(null);
 
-  const loadPopular = useCallback(async (p: number, sort: PopularSort) => {
+  const loadPage = useCallback(async (p: number, sort: PopularSort, append: boolean) => {
     setLoading(true);
     try {
-      // Use category 0 (all) to get popular addons across all categories
-      const r = await invokeOrThrow<EsouiSearchResult[]>("browse_esoui_category", {
-        categoryId: 0,
+      const r = await invokeOrThrow<EsouiSearchResult[]>("browse_esoui_popular", {
         page: p,
         sortBy: sort,
       });
-      setResults(r);
+      setResults((prev) => (append ? [...prev, ...r] : r));
+      setHasMore(r.length >= PAGE_SIZE);
+      pageRef.current = p;
     } catch (e) {
       toast.error(getTauriErrorMessage(e));
     } finally {
@@ -401,15 +397,22 @@ function PopularContent({
 
   // Load on mount
   useEffect(() => {
-    loadPopular(0, "downloads");
-  }, [loadPopular]);
+    loadPage(0, "downloads", false);
+  }, [loadPage]);
+
+  const loadMore = useCallback(() => {
+    const next = pageRef.current + 1;
+    loadPage(next, sortBy, true);
+  }, [sortBy, loadPage]);
+
+  const sentinelRef = useInfiniteScroll(loadMore, { hasMore, isLoading: loading });
 
   const handleSortChange = (sort: string | null) => {
     if (!sort) return;
     setSortBy(sort as PopularSort);
-    setPage(0);
+    setHasMore(true);
     onSelectResult(null);
-    loadPopular(0, sort as PopularSort);
+    loadPage(0, sort as PopularSort, false);
   };
 
   return (
@@ -443,8 +446,8 @@ function PopularContent({
         </div>
       </div>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto">
-        {loading ? (
+      <div className="flex-1 overflow-y-auto">
+        {results.length === 0 && loading ? (
           <LoadingSpinner message="Loading popular addons..." />
         ) : results.length === 0 ? (
           <EmptyState
@@ -453,55 +456,24 @@ function PopularContent({
             subtitle="Could not load popular addons"
           />
         ) : (
-          results.map((r, idx) => (
-            <div key={r.id} data-result-row className="relative">
-              {/* Rank indicator */}
-              <div className="absolute left-1 top-1/2 -translate-y-1/2 z-10">
-                <span
-                  className={cn(
-                    "text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full",
-                    idx + page * PAGE_SIZE < 3
-                      ? "text-[#c4a44a] bg-[#c4a44a]/10"
-                      : "text-muted-foreground/30"
-                  )}
-                >
-                  {idx + 1 + page * PAGE_SIZE}
-                </span>
-              </div>
-              <div className="pl-3">
-                <DiscoverResultRow
-                  result={r}
-                  selected={selectedResultId === r.id}
-                  installingId={installingId}
-                  onSelect={() => onSelectResult(r)}
-                  onInstall={() => handleInstall(r.id)}
-                  showMeta
-                />
-              </div>
-            </div>
-          ))
+          <>
+            {results.map((r, idx) => (
+              <DiscoverResultRow
+                key={r.id}
+                result={r}
+                selected={selectedResultId === r.id}
+                installingId={installingId}
+                onSelect={() => onSelectResult(r)}
+                onInstall={() => handleInstall(r.id)}
+                showMeta
+                rank={idx + 1}
+              />
+            ))}
+            {hasMore && <div ref={sentinelRef} className="h-1" />}
+            {loading && <LoadingSpinner message="Loading more..." />}
+          </>
         )}
       </div>
-
-      {results.length > 0 && (
-        <PaginationBar
-          page={page}
-          loading={loading}
-          isLastPage={results.length < PAGE_SIZE}
-          onPrev={() => {
-            const p = page - 1;
-            setPage(p);
-            loadPopular(p, sortBy);
-            listRef.current?.scrollTo(0, 0);
-          }}
-          onNext={() => {
-            const p = page + 1;
-            setPage(p);
-            loadPopular(p, sortBy);
-            listRef.current?.scrollTo(0, 0);
-          }}
-        />
-      )}
     </>
   );
 }
@@ -524,10 +496,10 @@ function CategoryContent({
   const [sortBy, setSortBy] = useState("downloads");
   const [results, setResults] = useState<EsouiSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [filterText, setFilterText] = useState("");
   const { installingId, install: handleInstall } = useAddonInstall(addonsPath, onInstalled);
-  const listRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef(0);
 
   useEffect(() => {
     void invokeResult<EsouiCategory[]>("get_esoui_categories").then((result) => {
@@ -539,7 +511,7 @@ function CategoryContent({
     });
   }, []);
 
-  const loadCategory = useCallback(async (catId: number, p: number, sort: string) => {
+  const loadPage = useCallback(async (catId: number, p: number, sort: string, append: boolean) => {
     setLoading(true);
     try {
       const r = await invokeOrThrow<EsouiSearchResult[]>("browse_esoui_category", {
@@ -547,7 +519,9 @@ function CategoryContent({
         page: p,
         sortBy: sort,
       });
-      setResults(r);
+      setResults((prev) => (append ? [...prev, ...r] : r));
+      setHasMore(r.length >= PAGE_SIZE);
+      pageRef.current = p;
     } catch (e) {
       toast.error(getTauriErrorMessage(e));
     } finally {
@@ -555,14 +529,25 @@ function CategoryContent({
     }
   }, []);
 
+  const loadMore = useCallback(() => {
+    if (!selectedCategory) return;
+    const next = pageRef.current + 1;
+    loadPage(selectedCategory, next, sortBy, true);
+  }, [selectedCategory, sortBy, loadPage]);
+
+  const sentinelRef = useInfiniteScroll(loadMore, {
+    hasMore: hasMore && !filterText,
+    isLoading: loading,
+  });
+
   const handleCategoryChange = (catId: string | null) => {
     if (!catId) return;
     const id = Number(catId);
     setSelectedCategory(id);
-    setPage(0);
     setFilterText("");
+    setHasMore(true);
     onSelectResult(null);
-    loadCategory(id, 0, sortBy);
+    loadPage(id, 0, sortBy, false);
   };
 
   const handleSortChange = (sort: string | null) => {
@@ -570,8 +555,8 @@ function CategoryContent({
     setSortBy(sort);
     setFilterText("");
     if (selectedCategory) {
-      setPage(0);
-      loadCategory(selectedCategory, 0, sort);
+      setHasMore(true);
+      loadPage(selectedCategory, 0, sort, false);
     }
   };
 
@@ -579,9 +564,7 @@ function CategoryContent({
     if (!filterText.trim()) return results;
     const q = filterText.toLowerCase();
     return results.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        r.author.toLowerCase().includes(q)
+      (r) => r.title.toLowerCase().includes(q) || r.author.toLowerCase().includes(q)
     );
   }, [results, filterText]);
 
@@ -595,7 +578,7 @@ function CategoryContent({
       <div className="space-y-2 px-3 pb-2">
         <Select onValueChange={handleCategoryChange}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a category..." />
+            <SelectValue placeholder="Select a category...">{selectedCategoryName}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {categories.map((cat) => (
@@ -608,7 +591,9 @@ function CategoryContent({
         <div className="flex gap-2">
           <Select value={sortBy} onValueChange={handleSortChange}>
             <SelectTrigger className="flex-1">
-              <SelectValue />
+              <SelectValue>
+                {{ downloads: "Most Popular", newest: "Recently Updated", name: "Name" }[sortBy]}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="downloads">Most Popular</SelectItem>
@@ -618,7 +603,7 @@ function CategoryContent({
           </Select>
         </div>
 
-        {/* Inline filter for results */}
+        {/* Inline filter for loaded results */}
         {results.length > 0 && (
           <Input
             placeholder={`Filter ${selectedCategoryName ?? "results"}...`}
@@ -634,22 +619,20 @@ function CategoryContent({
       {results.length > 0 && (
         <div className="flex items-center justify-between px-3 pb-1">
           <span className="text-[11px] font-heading font-bold uppercase tracking-[0.05em] text-muted-foreground/50">
-            {filterText
-              ? `${filteredResults.length} of ${results.length}`
-              : results.length}{" "}
-            addon{(filterText ? filteredResults.length : results.length) !== 1 ? "s" : ""}
+            {filterText ? `${filteredResults.length} of ${results.length}` : results.length} addon
+            {(filterText ? filteredResults.length : results.length) !== 1 ? "s" : ""}
           </span>
         </div>
       )}
 
-      <div ref={listRef} className="flex-1 overflow-y-auto">
-        {loading ? (
+      <div className="flex-1 overflow-y-auto">
+        {results.length === 0 && loading ? (
           <LoadingSpinner message="Loading..." />
         ) : filteredResults.length === 0 && filterText ? (
           <EmptyState
             icon={<Search className="size-8 text-muted-foreground/20" />}
             title="No matches"
-            subtitle={`No addons matching "${filterText}" in this page`}
+            subtitle={`No addons matching "${filterText}"`}
           />
         ) : results.length === 0 ? (
           <EmptyState
@@ -662,39 +645,23 @@ function CategoryContent({
             }
           />
         ) : (
-          filteredResults.map((r) => (
-            <DiscoverResultRow
-              key={r.id}
-              result={r}
-              selected={selectedResultId === r.id}
-              installingId={installingId}
-              onSelect={() => onSelectResult(r)}
-              onInstall={() => handleInstall(r.id)}
-              showMeta
-            />
-          ))
+          <>
+            {filteredResults.map((r) => (
+              <DiscoverResultRow
+                key={r.id}
+                result={r}
+                selected={selectedResultId === r.id}
+                installingId={installingId}
+                onSelect={() => onSelectResult(r)}
+                onInstall={() => handleInstall(r.id)}
+                showMeta
+              />
+            ))}
+            {hasMore && !filterText && <div ref={sentinelRef} className="h-1" />}
+            {loading && <LoadingSpinner message="Loading more..." />}
+          </>
         )}
       </div>
-
-      {results.length > 0 && !filterText && (
-        <PaginationBar
-          page={page}
-          loading={loading}
-          isLastPage={results.length < PAGE_SIZE}
-          onPrev={() => {
-            const p = page - 1;
-            setPage(p);
-            if (selectedCategory) loadCategory(selectedCategory, p, sortBy);
-            listRef.current?.scrollTo(0, 0);
-          }}
-          onNext={() => {
-            const p = page + 1;
-            setPage(p);
-            if (selectedCategory) loadCategory(selectedCategory, p, sortBy);
-            listRef.current?.scrollTo(0, 0);
-          }}
-        />
-      )}
     </>
   );
 }
@@ -867,7 +834,10 @@ function LoadingSpinner({ message }: { message: string }) {
     <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
       <div className="relative">
         <span className="inline-block size-6 animate-spin rounded-full border-2 border-white/[0.1] border-t-[#c4a44a]" />
-        <span className="absolute inset-0 inline-block size-6 animate-spin rounded-full border-2 border-transparent border-b-[#c4a44a]/30" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+        <span
+          className="absolute inset-0 inline-block size-6 animate-spin rounded-full border-2 border-transparent border-b-[#c4a44a]/30"
+          style={{ animationDirection: "reverse", animationDuration: "1.5s" }}
+        />
       </div>
       <span className="text-sm">{message}</span>
     </div>
@@ -892,36 +862,6 @@ function EmptyState({
         <p className="font-heading text-sm font-medium text-foreground/70">{title}</p>
         <p className="mt-1 text-xs text-muted-foreground/40 max-w-[200px]">{subtitle}</p>
       </div>
-    </div>
-  );
-}
-
-function PaginationBar({
-  page,
-  loading,
-  isLastPage,
-  onPrev,
-  onNext,
-}: {
-  page: number;
-  loading: boolean;
-  isLastPage: boolean;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between border-t border-white/[0.06] px-3 py-1.5">
-      <Button variant="ghost" size="xs" disabled={page === 0 || loading} onClick={onPrev}>
-        <ChevronLeft className="size-3" />
-        Prev
-      </Button>
-      <span className="text-[11px] text-muted-foreground/50 flex items-center gap-1">
-        Page {page + 1}
-      </span>
-      <Button variant="ghost" size="xs" disabled={loading || isLastPage} onClick={onNext}>
-        Next
-        <ChevronRight className="size-3" />
-      </Button>
     </div>
   );
 }
