@@ -69,12 +69,14 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
     };
   }, [result]);
 
-  // Keyboard navigation for screenshots
+  // Keyboard navigation for screenshots — only when detail panel is focused
   useEffect(() => {
     if (!detail || detail.screenshots.length <= 1) return;
 
     const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const target = e.target as Element;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+      if (target.closest('[role="listbox"], [role="combobox"], [role="option"], select')) return;
       if (e.key === "ArrowLeft") {
         setScreenshotIdx((prev) => (prev > 0 ? prev - 1 : detail.screenshots.length - 1));
       } else if (e.key === "ArrowRight") {
@@ -297,9 +299,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
       {/* Screenshots */}
       {detail.screenshots.length > 0 && (
         <div>
-          <SectionHeader className="mb-2">
-            Screenshots ({detail.screenshots.length})
-          </SectionHeader>
+          <SectionHeader className="mb-2">Screenshots ({detail.screenshots.length})</SectionHeader>
           <div className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02] group/screenshot">
             <img
               src={detail.screenshots[safeIdx]}
@@ -340,9 +340,7 @@ export function DiscoverDetail({ result, addonsPath, onInstalled }: DiscoverDeta
                       key={i}
                       className={cn(
                         "size-2 rounded-full transition-all duration-200",
-                        i === safeIdx
-                          ? "bg-[#c4a44a] scale-110"
-                          : "bg-white/30 hover:bg-white/50"
+                        i === safeIdx ? "bg-[#c4a44a] scale-110" : "bg-white/30 hover:bg-white/50"
                       )}
                       onClick={() => setScreenshotIdx(i)}
                       aria-label={`Screenshot ${i + 1}`}
