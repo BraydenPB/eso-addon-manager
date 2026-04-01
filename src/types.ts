@@ -134,7 +134,7 @@ export type FilterMode = "all" | "addons" | "libraries" | "outdated" | "missing-
 // Predefined tags users can apply to addons
 export const PRESET_TAGS = ["favorite", "testing", "broken", "essential", "raid"] as const;
 export type PresetTag = (typeof PRESET_TAGS)[number];
-export type ViewMode = "installed" | "discover";
+export type ViewMode = "installed" | "discover" | "logs";
 export type DiscoverTab = "search" | "popular" | "categories" | "url";
 
 // ── Pack types (from roster-hub-api Pack Hub) ─────────────────────────────

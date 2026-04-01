@@ -9,6 +9,7 @@ import { AppDialogs } from "./components/app-dialogs";
 import { AppHeader } from "./components/app-header";
 import { DiscoverDetail } from "./components/discover-detail";
 import { SetupWizard } from "./components/setup-wizard";
+import { LogsWorkspace } from "./components/logs/logs-workspace";
 import { StatusBanners } from "./components/status-banners";
 import { UpdateBanner } from "./components/update-banner";
 import { getSetting, setSetting } from "@/lib/store";
@@ -84,6 +85,7 @@ function App() {
   const [batchRemoving, setBatchRemoving] = useState(false);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [setupDetection, setSetupDetection] = useState<AddonsDetectionResult | null>(null);
+  const [logsCharacterFilter, setLogsCharacterFilter] = useState<string | null>(null);
 
   const {
     state: appUpdateState,
@@ -405,8 +407,13 @@ function App() {
         setDiscoverTab("search");
       }
 
+      if (event.ctrlKey && event.key === "l") {
+        event.preventDefault();
+        setViewMode("logs");
+      }
+
       if (event.key === "Escape") {
-        if (viewModeRef.current === "discover") {
+        if (viewModeRef.current === "discover" || viewModeRef.current === "logs") {
           setViewMode("installed");
         }
         setSelectedFolders(new Set());
@@ -416,6 +423,13 @@ function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [scanAndCheck]);
+
+  // Clear character filter when navigating away from logs
+  useEffect(() => {
+    if (viewMode !== "logs") {
+      setLogsCharacterFilter(null);
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     if (!activeTagFilter) return;
@@ -664,6 +678,18 @@ function App() {
 
   const batchMode = selectedFolders.size > 0;
 
+  const handleViewLogsForCharacter = useCallback((characterName: string) => {
+    setLogsCharacterFilter(characterName);
+    setViewMode("logs");
+  }, []);
+
+  // TODO: Implement date-based addon filtering on the Addons page.
+  // Currently navigates to the installed view with `?date=<timestamp>` semantics
+  // but the actual filter is not yet applied to the addon list.
+  const handleViewAddonsAtDate = useCallback((_timestamp: number) => {
+    setViewMode("installed");
+  }, []);
+
   const handleOpenDialog = useCallback((dialog: Exclude<ActiveDialog, null>) => {
     setActiveDialog(dialog);
   }, []);
@@ -760,14 +786,20 @@ function App() {
             onAddonUpdated={handleAddonUpdated}
             onTagsChange={handleTagsChange}
           />
-        ) : (
+        ) : viewMode === "discover" ? (
           <DiscoverDetail
             key={selectedDiscoverResult?.id ?? "none"}
             result={selectedDiscoverResult}
             addonsPath={addonsPath}
             onInstalled={handleRefresh}
           />
-        )}
+        ) : viewMode === "logs" ? (
+          <LogsWorkspace
+            addonsPath={addonsPath}
+            onViewAddonsAtDate={handleViewAddonsAtDate}
+            characterFilter={logsCharacterFilter}
+          />
+        ) : null}
       </div>
 
       <AppDialogs
@@ -783,6 +815,7 @@ function App() {
         onPathChange={(path) => void handlePathChange(path)}
         onRefresh={handleRefresh}
         onShowDialog={handleOpenDialog}
+        onViewLogs={handleViewLogsForCharacter}
       />
     </div>
   );

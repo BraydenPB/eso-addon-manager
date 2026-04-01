@@ -2,13 +2,14 @@ mod auth;
 mod commands;
 mod esoui;
 mod installer;
+pub mod logs;
 mod manifest;
 mod manifest_cache;
 mod metadata;
 
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -108,6 +109,11 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AllowedAddonsPath(Mutex::new(None)))
         .manage(auth::AuthState(Mutex::new(None)))
+        .manage(logs::commands::ActiveLogWatcher(Mutex::new(None)))
+        .manage(logs::commands::LiveLogBuffer(Arc::new(Mutex::new(
+            logs::commands::LiveBufferInner::default(),
+        ))))
+        .manage(logs::commands::LineLogWatcher(Mutex::new(None)))
         .manage(PendingDeepLink(Mutex::new(
             PendingDeepLinkPayload::default(),
         )))
@@ -259,6 +265,16 @@ pub fn run() {
             commands::resolve_share_code,
             commands::export_pack_file,
             commands::import_pack_file,
+            logs::commands::detect_log_path,
+            logs::commands::list_logs,
+            logs::commands::analyze_log,
+            logs::commands::get_encounter_detail,
+            logs::commands::watch_log_start,
+            logs::commands::watch_log_stop,
+            logs::commands::get_live_status,
+            logs::commands::get_logs_dir,
+            logs::commands::start_log_watch,
+            logs::commands::stop_log_watch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

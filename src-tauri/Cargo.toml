@@ -37,6 +37,7 @@ rayon = "1.11"
 # "bundled" statically compiles SQLite (~1-2MB binary size increase) to avoid
 # depending on a system SQLite installation. Worth it for portable releases.
 rusqlite = { version = "0.31", features = ["bundled"] }
+notify = { version = "7", default-features = true }
 
 [profile.release]
 lto = true
