@@ -13,17 +13,9 @@ export function useLogWatcher(logPath: string | null) {
   const activePathRef = useRef<string | null>(null);
 
   // Start watching whenever logPath changes (non-null = watch, null = stop)
+  // When logPath changes, the cleanup from the previous effect handles stopping.
   useEffect(() => {
-    if (!logPath) {
-      // If we were watching, stop
-      if (activePathRef.current) {
-        void invoke("stop_log_watch").catch(() => {});
-        activePathRef.current = null;
-        setIsWatching(false);
-        setLiveLines([]);
-      }
-      return;
-    }
+    if (!logPath) return;
 
     let disposed = false;
     let unlisten: (() => void) | null = null;
