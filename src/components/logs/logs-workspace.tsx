@@ -1,13 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { invokeOrThrow, invokeResult, toastTauriError } from "@/lib/tauri";
 import { getSetting, setSetting } from "@/lib/store";
-import type {
-  LogPathDetection,
-  LogFileInfo,
-  LogAnalysis,
-  Encounter,
-  LogsView,
-} from "@/types/logs";
+import type { LogPathDetection, LogFileInfo, LogAnalysis, Encounter, LogsView } from "@/types/logs";
 import { LogsHome } from "./logs-home";
 import { LogDetail } from "./log-detail";
 import { EncounterDetail } from "./encounter-detail";
@@ -18,7 +12,11 @@ interface LogsWorkspaceProps {
   characterFilter?: string | null;
 }
 
-export function LogsWorkspace({ addonsPath, onViewAddonsAtDate, characterFilter }: LogsWorkspaceProps) {
+export function LogsWorkspace({
+  addonsPath,
+  onViewAddonsAtDate,
+  characterFilter,
+}: LogsWorkspaceProps) {
   const [logsPath, setLogsPath] = useState<string | null>(null);
   const [detection, setDetection] = useState<LogPathDetection | null>(null);
   const [logFiles, setLogFiles] = useState<LogFileInfo[]>([]);

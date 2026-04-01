@@ -51,9 +51,7 @@ export function LogDetail({ analysis, onBack, onOpenEncounter }: LogDetailProps)
           <ArrowLeft className="size-4" />
         </Button>
         <div className="flex-1 min-w-0">
-          <h2 className="truncate text-base font-bold text-foreground">
-            {analysis.file.fileName}
-          </h2>
+          <h2 className="truncate text-base font-bold text-foreground">{analysis.file.fileName}</h2>
           <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
             <span>{analysis.totalEvents.toLocaleString()} events</span>
             <span className="text-white/10">|</span>
@@ -92,8 +90,8 @@ export function LogDetail({ analysis, onBack, onOpenEncounter }: LogDetailProps)
             <SectionHeader className="flex items-center gap-2 px-1">
               <span>{bossName}</span>
               <span className="text-muted-foreground/30">
-                — {encounters.length} encounter{encounters.length !== 1 ? "s" : ""}
-                {" "}({encounters.filter((e) => e.isKill).length} kills)
+                — {encounters.length} encounter{encounters.length !== 1 ? "s" : ""} (
+                {encounters.filter((e) => e.isKill).length} kills)
               </span>
             </SectionHeader>
 
@@ -153,4 +151,3 @@ export function LogDetail({ analysis, onBack, onOpenEncounter }: LogDetailProps)
     </div>
   );
 }
-

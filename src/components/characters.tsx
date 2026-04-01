@@ -34,9 +34,9 @@ export function Characters({ addonsPath, onClose, onViewLogs }: CharactersProps)
   const [loading, setLoading] = useState(true);
   const [backupName, setBackupName] = useState("");
   const [backingUp, setBackingUp] = useState<string | null>(null);
-  const [recentEncounters, setRecentEncounters] = useState<
-    Map<string, CharacterEncounter[]>
-  >(new Map());
+  const [recentEncounters, setRecentEncounters] = useState<Map<string, CharacterEncounter[]>>(
+    new Map()
+  );
   const [expandedChar, setExpandedChar] = useState<string | null>(null);
 
   useEffect(() => {
@@ -197,7 +197,8 @@ export function Characters({ addonsPath, onClose, onViewLogs }: CharactersProps)
                             {char.name}
                             {charEncounters.length > 0 && (
                               <span className="text-[10px] text-muted-foreground/50">
-                                {charEncounters.length} recent log{charEncounters.length !== 1 ? "s" : ""}
+                                {charEncounters.length} recent log
+                                {charEncounters.length !== 1 ? "s" : ""}
                               </span>
                             )}
                           </button>

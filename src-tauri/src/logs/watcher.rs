@@ -150,17 +150,12 @@ pub fn watch_log_file(file_path: &str, on_events: OnNewEvents) -> Result<LogWatc
     let stop_flag_clone = Arc::clone(&stop_flag);
 
     let thread = thread::spawn(move || {
-        tail_file(
-            path,
-            initial_size,
-            stop_flag_clone,
-            move |new_text| {
-                let events = parser::parse_chunk(new_text);
-                if !events.is_empty() {
-                    on_events(events);
-                }
-            },
-        );
+        tail_file(path, initial_size, stop_flag_clone, move |new_text| {
+            let events = parser::parse_chunk(new_text);
+            if !events.is_empty() {
+                on_events(events);
+            }
+        });
     });
 
     Ok(LogWatchHandle {
@@ -196,26 +191,21 @@ pub fn watch_log_lines(
     let path_string = file_path.to_string();
 
     let thread = thread::spawn(move || {
-        tail_file(
-            path,
-            initial_size,
-            stop_flag_clone,
-            move |new_text| {
-                let lines: Vec<String> = new_text
-                    .lines()
-                    .filter(|l| !l.is_empty())
-                    .map(|l| l.to_string())
-                    .collect();
+        tail_file(path, initial_size, stop_flag_clone, move |new_text| {
+            let lines: Vec<String> = new_text
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect();
 
-                if !lines.is_empty() {
-                    let payload = LogUpdatedPayload {
-                        path: path_string.clone(),
-                        new_lines: lines,
-                    };
-                    let _ = app_handle.emit("log-updated", payload);
-                }
-            },
-        );
+            if !lines.is_empty() {
+                let payload = LogUpdatedPayload {
+                    path: path_string.clone(),
+                    new_lines: lines,
+                };
+                let _ = app_handle.emit("log-updated", payload);
+            }
+        });
     });
 
     Ok(LogWatchHandle {

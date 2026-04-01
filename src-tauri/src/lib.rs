@@ -9,7 +9,7 @@ mod metadata;
 
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -110,9 +110,9 @@ pub fn run() {
         .manage(AllowedAddonsPath(Mutex::new(None)))
         .manage(auth::AuthState(Mutex::new(None)))
         .manage(logs::commands::ActiveLogWatcher(Mutex::new(None)))
-        .manage(logs::commands::LiveLogBuffer(Mutex::new(
+        .manage(logs::commands::LiveLogBuffer(Arc::new(Mutex::new(
             logs::commands::LiveBufferInner::default(),
-        )))
+        ))))
         .manage(logs::commands::LineLogWatcher(Mutex::new(None)))
         .manage(PendingDeepLink(Mutex::new(
             PendingDeepLinkPayload::default(),

@@ -1,11 +1,5 @@
 import { useState, useCallback } from "react";
-import {
-  FileText,
-  FolderOpen,
-  HardDriveDownload,
-  Radio,
-  RefreshCw,
-} from "lucide-react";
+import { FileText, FolderOpen, HardDriveDownload, Radio, RefreshCw } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import { invokeResult, toastTauriError } from "@/lib/tauri";
@@ -118,10 +112,13 @@ export function LogsHome({
       <div className="flex items-center gap-3">
         <GlassPanel variant="subtle" className="flex flex-1 items-center gap-3 px-4 py-3">
           <FileText className="size-4 text-muted-foreground/60" />
-          <div className="flex-1 truncate text-sm text-muted-foreground">
-            {logsPath}
-          </div>
-          <Button variant="ghost" size="icon-xs" onClick={() => void handlePickFolder()} aria-label="Change log folder">
+          <div className="flex-1 truncate text-sm text-muted-foreground">{logsPath}</div>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => void handlePickFolder()}
+            aria-label="Change log folder"
+          >
             <FolderOpen className="size-3.5" />
           </Button>
           <Button variant="ghost" size="icon-xs" onClick={onRefresh} aria-label="Refresh log files">
@@ -156,9 +153,7 @@ export function LogsHome({
             </span>
             <span className="text-sm font-medium text-emerald-400">Recording</span>
           </div>
-          <InfoPill color="muted">
-            {formatFileSize(liveStatus.fileSize)}
-          </InfoPill>
+          <InfoPill color="muted">{formatFileSize(liveStatus.fileSize)}</InfoPill>
           {liveStatus.currentEncounter && (
             <>
               <InfoPill color="amber">{liveStatus.currentEncounter.bossName}</InfoPill>
@@ -183,14 +178,10 @@ export function LogsHome({
       )}
 
       {/* Live log tailing */}
-      {logFiles.length > 0 && (
-        <LiveLoggingBar logFilePath={logFiles[0].path} />
-      )}
+      {logFiles.length > 0 && <LiveLoggingBar logFilePath={logFiles[0].path} />}
 
       {/* Log files list */}
-      <SectionHeader>
-        Log Files ({logFiles.length})
-      </SectionHeader>
+      <SectionHeader>Log Files ({logFiles.length})</SectionHeader>
 
       {loadingFiles ? (
         <div className="flex items-center justify-center py-12">
@@ -213,9 +204,7 @@ export function LogsHome({
             >
               <FileText className="size-4 shrink-0 text-muted-foreground/40" />
               <div className="flex-1 min-w-0">
-                <div className="truncate text-sm font-medium text-foreground">
-                  {file.fileName}
-                </div>
+                <div className="truncate text-sm font-medium text-foreground">{file.fileName}</div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
                   <span>{formatFileSize(file.sizeBytes)}</span>
                   {file.encounterCount != null && (

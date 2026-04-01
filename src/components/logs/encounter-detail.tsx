@@ -102,9 +102,7 @@ export function EncounterDetail({ encounter, onBack, onViewAddonsAtDate }: Encou
             </div>
 
             {/* Name */}
-            <div className="truncate text-sm font-medium text-foreground">
-              {player.name}
-            </div>
+            <div className="truncate text-sm font-medium text-foreground">{player.name}</div>
 
             {/* DPS number */}
             <div className="text-right text-xs font-semibold text-sky-400">
@@ -179,4 +177,3 @@ function RoleIcon({ role }: { role: PlayerRole }) {
       return <User className="size-3.5 text-muted-foreground/40" />;
   }
 }
-

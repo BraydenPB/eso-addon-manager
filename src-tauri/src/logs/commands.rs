@@ -8,24 +8,14 @@ use crate::AllowedAddonsPath;
 pub struct ActiveLogWatcher(pub Mutex<Option<watcher::LogWatchHandle>>);
 
 /// Managed state holding events received from the live watcher.
-pub struct LiveLogBuffer(pub Mutex<LiveBufferInner>);
+pub struct LiveLogBuffer(pub Arc<Mutex<LiveBufferInner>>);
 
+#[derive(Default)]
 pub struct LiveBufferInner {
     pub events: Vec<super::types::CombatEvent>,
     pub file_path: Option<String>,
     pub last_event_time: Option<std::time::Instant>,
     pub encounters_completed: usize,
-}
-
-impl Default for LiveBufferInner {
-    fn default() -> Self {
-        Self {
-            events: Vec::new(),
-            file_path: None,
-            last_event_time: None,
-            encounters_completed: 0,
-        }
-    }
 }
 
 /// Validate that a file path points to a `.log` file and doesn't contain
@@ -130,7 +120,7 @@ pub fn get_encounter_detail(
         .map_err(|e| format!("Failed to read log file: {}", e))?;
 
     let events_with_offsets = parser::parse_with_offsets(&content);
-    let encounters = encounter::detect_encounters(&events_with_offsets);
+    let mut encounters = encounter::detect_encounters(&events_with_offsets);
 
     if encounter_index >= encounters.len() {
         return Err(format!(
